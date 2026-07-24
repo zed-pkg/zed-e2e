@@ -64,6 +64,31 @@ async function waitFor(url: string, label: string, timeoutMs = 60_000): Promise<
   throw new Error(`timed out waiting for ${label} at ${url}: ${lastErr}`);
 }
 
+/** True if something is already accepting connections on 127.0.0.1:port. */
+function portInUse(port: number, timeoutMs = 500): Promise<boolean> {
+  return new Promise((resolve) => {
+    const sock = net.connect({ host: "127.0.0.1", port });
+    const done = (used: boolean) => {
+      sock.destroy();
+      resolve(used);
+    };
+    sock.setTimeout(timeoutMs);
+    sock.once("connect", () => done(true));
+    sock.once("timeout", () => done(false));
+    sock.once("error", () => done(false));
+  });
+}
+
+/** Wait until 127.0.0.1:port accepts a TCP connection (host-side, not in-container). */
+async function waitForPort(port: number, label: string, timeoutMs = 60_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await portInUse(port)) return;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  throw new Error(`timed out waiting for ${label} to accept connections on 127.0.0.1:${port}`);
+}
+
 async function startPostgres(): Promise<void> {
   await sh("docker", ["rm", "-f", PG_CONTAINER]).catch(() => {});
   await sh("docker", [
@@ -77,11 +102,17 @@ async function startPostgres(): Promise<void> {
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     try {
+      // The alpine entrypoint runs a transient internal server during init, so
+      // `pg_isready` inside the container can pass before the host port is
+      // actually forwarding. Require BOTH: in-container readiness AND a
+      // host-side TCP connect to 127.0.0.1:PG_PORT, or the API server's
+      // no-retry `Database::connect` (5s) can lose the race and exit.
       await sh("docker", ["exec", PG_CONTAINER, "pg_isready", "-U", "zed", "-d", "zed_e2e"]);
-      return;
+      if (await portInUse(PG_PORT)) return;
     } catch {
-      await new Promise((r) => setTimeout(r, 400));
+      // not ready yet
     }
+    await new Promise((r) => setTimeout(r, 400));
   }
   throw new Error("postgres container did not become ready");
 }

@@ -219,15 +219,52 @@ export async function createToken(name: string, org: string): Promise<string> {
   return token;
 }
 
+/**
+ * Kill any servers recorded in `.stack/*.pid`. This is how orphaned DETACHED
+ * servers get reaped: `stack:up` spawns them in one process and `stack:down`
+ * runs in a different process where the `apiProc`/`webProc` module globals are
+ * undefined, so killing by PID from disk is the only handle we have.
+ */
+function reapPidFiles(): void {
+  let entries: string[];
+  try {
+    entries = readdirSync(STATE_DIR);
+  } catch {
+    return; // no state dir yet
+  }
+  for (const entry of entries) {
+    if (!entry.endsWith(".pid")) continue;
+    const pidStr = (() => {
+      try {
+        return readFileSync(path.join(STATE_DIR, entry), "utf8").trim();
+      } catch {
+        return "";
+      }
+    })();
+    const pid = Number(pidStr);
+    if (!Number.isInteger(pid) || pid <= 0) continue;
+    for (const sig of ["SIGTERM", "SIGKILL"] as const) {
+      try {
+        process.kill(pid, sig);
+      } catch {
+        break; // already gone (ESRCH) or not ours (EPERM)
+      }
+    }
+  }
+}
+
 export async function stopStack(): Promise<void> {
   if (externalStack || process.env.ZED_E2E_KEEP === "1") return;
   for (const proc of [webProc, apiProc]) {
     if (proc && proc.exitCode === null) {
       proc.kill("SIGTERM");
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 500));
       if (proc.exitCode === null) proc.kill("SIGKILL");
     }
   }
+  // Also reap detached servers whose in-process handles this process never had
+  // (the `stack:down` case).
+  reapPidFiles();
   await sh("docker", ["rm", "-f", PG_CONTAINER]).catch(() => {});
 }
 

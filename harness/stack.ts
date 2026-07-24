@@ -13,7 +13,8 @@
  */
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdirSync, writeFileSync, openSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, openSync, rmSync } from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
@@ -63,6 +64,31 @@ async function waitFor(url: string, label: string, timeoutMs = 60_000): Promise<
   throw new Error(`timed out waiting for ${label} at ${url}: ${lastErr}`);
 }
 
+/** True if something is already accepting connections on 127.0.0.1:port. */
+function portInUse(port: number, timeoutMs = 500): Promise<boolean> {
+  return new Promise((resolve) => {
+    const sock = net.connect({ host: "127.0.0.1", port });
+    const done = (used: boolean) => {
+      sock.destroy();
+      resolve(used);
+    };
+    sock.setTimeout(timeoutMs);
+    sock.once("connect", () => done(true));
+    sock.once("timeout", () => done(false));
+    sock.once("error", () => done(false));
+  });
+}
+
+/** Wait until 127.0.0.1:port accepts a TCP connection (host-side, not in-container). */
+async function waitForPort(port: number, label: string, timeoutMs = 60_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await portInUse(port)) return;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  throw new Error(`timed out waiting for ${label} to accept connections on 127.0.0.1:${port}`);
+}
+
 async function startPostgres(): Promise<void> {
   await sh("docker", ["rm", "-f", PG_CONTAINER]).catch(() => {});
   await sh("docker", [
@@ -76,11 +102,17 @@ async function startPostgres(): Promise<void> {
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     try {
+      // The alpine entrypoint runs a transient internal server during init, so
+      // `pg_isready` inside the container can pass before the host port is
+      // actually forwarding. Require BOTH: in-container readiness AND a
+      // host-side TCP connect to 127.0.0.1:PG_PORT, or the API server's
+      // no-retry `Database::connect` (5s) can lose the race and exit.
       await sh("docker", ["exec", PG_CONTAINER, "pg_isready", "-U", "zed", "-d", "zed_e2e"]);
-      return;
+      if (await portInUse(PG_PORT)) return;
     } catch {
-      await new Promise((r) => setTimeout(r, 400));
+      // not ready yet
     }
+    await new Promise((r) => setTimeout(r, 400));
   }
   throw new Error("postgres container did not become ready");
 }
@@ -122,8 +154,23 @@ export async function startStack(): Promise<Stack> {
   if (externalStack) {
     return { apiUrl: API_URL, webUrl: WEB_URL, databaseUrl: DATABASE_URL, artifactsDir };
   }
+  // Reap any detached servers left behind by a previous `stack:up` BEFORE we
+  // wipe STATE_DIR — otherwise their pidfiles are lost and the orphans keep the
+  // ports bound, so the freshly spawned servers fail to bind while `waitFor`
+  // happily gets 200s from the stale instance pointed at a now-recreated DB.
+  reapPidFiles();
   rmSync(STATE_DIR, { recursive: true, force: true });
   mkdirSync(artifactsDir, { recursive: true });
+
+  // Fail fast and clearly on a port collision rather than silently testing
+  // against whatever else is bound here.
+  for (const [port, label] of [[API_PORT, "api"], [WEB_PORT, "web"]] as const) {
+    if (await portInUse(port)) {
+      throw new Error(
+        `port ${port} (${label}) is already in use — a previous stack may still be running; run \`npm run stack:down\``,
+      );
+    }
+  }
 
   await startPostgres();
   await buildServers();
@@ -172,15 +219,52 @@ export async function createToken(name: string, org: string): Promise<string> {
   return token;
 }
 
+/**
+ * Kill any servers recorded in `.stack/*.pid`. This is how orphaned DETACHED
+ * servers get reaped: `stack:up` spawns them in one process and `stack:down`
+ * runs in a different process where the `apiProc`/`webProc` module globals are
+ * undefined, so killing by PID from disk is the only handle we have.
+ */
+function reapPidFiles(): void {
+  let entries: string[];
+  try {
+    entries = readdirSync(STATE_DIR);
+  } catch {
+    return; // no state dir yet
+  }
+  for (const entry of entries) {
+    if (!entry.endsWith(".pid")) continue;
+    const pidStr = (() => {
+      try {
+        return readFileSync(path.join(STATE_DIR, entry), "utf8").trim();
+      } catch {
+        return "";
+      }
+    })();
+    const pid = Number(pidStr);
+    if (!Number.isInteger(pid) || pid <= 0) continue;
+    for (const sig of ["SIGTERM", "SIGKILL"] as const) {
+      try {
+        process.kill(pid, sig);
+      } catch {
+        break; // already gone (ESRCH) or not ours (EPERM)
+      }
+    }
+  }
+}
+
 export async function stopStack(): Promise<void> {
   if (externalStack || process.env.ZED_E2E_KEEP === "1") return;
   for (const proc of [webProc, apiProc]) {
     if (proc && proc.exitCode === null) {
       proc.kill("SIGTERM");
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 500));
       if (proc.exitCode === null) proc.kill("SIGKILL");
     }
   }
+  // Also reap detached servers whose in-process handles this process never had
+  // (the `stack:down` case).
+  reapPidFiles();
   await sh("docker", ["rm", "-f", PG_CONTAINER]).catch(() => {});
 }
 

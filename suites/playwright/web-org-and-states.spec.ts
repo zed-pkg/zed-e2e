@@ -24,9 +24,10 @@ test.describe("zed-web-server routes and empty states", () => {
     expect(res!.status()).toBe(404);
   });
 
-  test("search page shows the initial prompt before typing", async ({ page }) => {
+  test("search page renders the search box", async ({ page }) => {
     await page.goto(`${WEB_URL}/search`);
-    await expect(page.locator("body")).toContainText("type to search");
+    await expect(page.locator("h1")).toContainText("Search");
+    await expect(page.locator("#q")).toBeVisible();
   });
 
   test("a no-match search shows the empty state", async ({ page }) => {

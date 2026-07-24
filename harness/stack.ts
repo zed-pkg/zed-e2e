@@ -154,8 +154,23 @@ export async function startStack(): Promise<Stack> {
   if (externalStack) {
     return { apiUrl: API_URL, webUrl: WEB_URL, databaseUrl: DATABASE_URL, artifactsDir };
   }
+  // Reap any detached servers left behind by a previous `stack:up` BEFORE we
+  // wipe STATE_DIR — otherwise their pidfiles are lost and the orphans keep the
+  // ports bound, so the freshly spawned servers fail to bind while `waitFor`
+  // happily gets 200s from the stale instance pointed at a now-recreated DB.
+  reapPidFiles();
   rmSync(STATE_DIR, { recursive: true, force: true });
   mkdirSync(artifactsDir, { recursive: true });
+
+  // Fail fast and clearly on a port collision rather than silently testing
+  // against whatever else is bound here.
+  for (const [port, label] of [[API_PORT, "api"], [WEB_PORT, "web"]] as const) {
+    if (await portInUse(port)) {
+      throw new Error(
+        `port ${port} (${label}) is already in use — a previous stack may still be running; run \`npm run stack:down\``,
+      );
+    }
+  }
 
   await startPostgres();
   await buildServers();

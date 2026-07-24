@@ -3,10 +3,13 @@
  * something to browse, and exercises the full publish -> install loop end
  * to end against the live api server.
  */
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, openSync, closeSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { runZed, createToken } from "./stack.js";
+
+const SEED_LOCK = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".stack", "seed.lock");
 
 export interface PublishedPackage {
   org: string;

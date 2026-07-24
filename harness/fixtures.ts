@@ -3,10 +3,13 @@
  * something to browse, and exercises the full publish -> install loop end
  * to end against the live api server.
  */
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, openSync, closeSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { runZed, createToken } from "./stack.js";
+
+const SEED_LOCK = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".stack", "seed.lock");
 
 export interface PublishedPackage {
   org: string;
@@ -87,18 +90,62 @@ export const SEED = {
 
 let seeded: { token: string } | null = null;
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * A real cross-process lock via O_EXCL file creation (atomic on POSIX). A stale
+ * lock older than `staleMs` is reclaimed so a crashed seeder can't wedge the
+ * suite forever. Returns a release fn.
+ */
+async function acquireSeedLock(staleMs = 120_000, timeoutMs = 180_000): Promise<() => void> {
+  mkdirSync(path.dirname(SEED_LOCK), { recursive: true });
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const fd = openSync(SEED_LOCK, "wx"); // fails if the file already exists
+      return () => {
+        try {
+          closeSync(fd);
+        } catch {
+          /* already closed */
+        }
+        rmSync(SEED_LOCK, { force: true });
+      };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      // Held by someone else — reclaim if stale, else wait.
+      try {
+        if (Date.now() - statSync(SEED_LOCK).mtimeMs > staleMs) {
+          rmSync(SEED_LOCK, { force: true });
+          continue;
+        }
+      } catch {
+        continue; // lock vanished between open and stat — retry immediately
+      }
+      if (Date.now() > deadline) throw new Error("timed out acquiring seed lock");
+      await sleep(150);
+    }
+  }
+}
+
 /**
  * Idempotently claim the seed org, mint a token, and publish SEED. Safe to
  * call from every suite/worker and across reruns against a persistent
- * registry: already-published versions are accepted. A cross-process file
- * lock serializes concurrent seeders so parallel workers don't race.
+ * registry: already-published versions are accepted. A cross-process O_EXCL
+ * file lock (see acquireSeedLock) serializes concurrent seeders so parallel
+ * workers don't race the org-claim / publish.
  */
 export async function ensureSeeded(): Promise<{ token: string }> {
   if (seeded) return seeded;
-  const token = await createToken(`e2e-seed-${Date.now().toString(36)}`, SEED.org);
-  for (const pkg of SEED.packages) {
-    await publishFixture(pkg, { token, allowExisting: true });
+  const release = await acquireSeedLock();
+  try {
+    const token = await createToken(`e2e-seed-${Date.now().toString(36)}`, SEED.org);
+    for (const pkg of SEED.packages) {
+      await publishFixture(pkg, { token, allowExisting: true });
+    }
+    seeded = { token };
+    return seeded;
+  } finally {
+    release();
   }
-  seeded = { token };
-  return seeded;
 }

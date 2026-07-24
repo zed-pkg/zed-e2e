@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { API_URL, createToken, runZed } from "../../harness/stack.js";
+import { API_URL, createToken } from "../../harness/stack.js";
 import { ensureSeeded, publishFixture } from "../../harness/fixtures.js";
 
 // Authorization boundaries on the mutating endpoints (publish / yank). The

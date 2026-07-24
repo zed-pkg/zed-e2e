@@ -1,0 +1,66 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-e2e
+          path: zed-e2e
+      # Sibling checkouts the harness builds and drives.
+      - uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-interfaces
+          path: zed-interfaces
+      - uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-cli
+          path: zed-cli
+      - uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-api-server.rs
+          path: zed-api-server.rs
+      - uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-web-server.rs
+          path: zed-web-server.rs
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            zed-cli
+            zed-api-server.rs
+            zed-web-server.rs
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install e2e deps
+        working-directory: zed-e2e
+        run: |
+          npm ci || npm install
+          npx playwright install --with-deps chromium
+
+      - name: Typecheck
+        working-directory: zed-e2e
+        run: npm run typecheck
+
+      # Docker (Postgres) is available on ubuntu-latest runners by default.
+      - name: Run e2e (playwright + puppeteer + selenium)
+        working-directory: zed-e2e
+        run: npm run e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: zed-e2e/playwright-report
+          retention-days: 7

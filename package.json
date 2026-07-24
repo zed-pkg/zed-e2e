@@ -1,0 +1,28 @@
+{
+  "name": "zed-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "End-to-end tests for the zed-pkg registry: drives the Rust web server, Rust API server, and the zed CLI with Playwright, Puppeteer, and Selenium.",
+  "type": "module",
+  "scripts": {
+    "e2e": "npm run e2e:playwright && npm run e2e:puppeteer && npm run e2e:selenium",
+    "e2e:playwright": "playwright test",
+    "e2e:puppeteer": "tsx --test suites/puppeteer/*.test.ts",
+    "e2e:selenium": "tsx --test suites/selenium/*.test.ts",
+    "stack:up": "tsx harness/stack-cli.ts up",
+    "stack:down": "tsx harness/stack-cli.ts down",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run e2e"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^26.1.1",
+    "@types/selenium-webdriver": "^4.35.6",
+    "playwright": "^1.61.1",
+    "puppeteer": "^25.3.0",
+    "selenium-webdriver": "^4.46.0",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2"
+  }
+}

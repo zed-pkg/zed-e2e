@@ -21,12 +21,15 @@ after(async () => {
   await stopStack();
 });
 
-test("home page renders the registry and seed packages", async () => {
+test("home page renders the registry and its recency list", async () => {
   await page.goto(`${WEB_URL}/`, { waitUntil: "networkidle0" });
   const brand = await page.$eval(".brand", (el) => el.textContent ?? "");
   assert.match(brand, /zed/);
-  const listText = await page.$eval(".pkg-list", (el) => el.textContent ?? "");
-  assert.match(listText, /http-kit/);
+  // Registry-state-agnostic: the home page caps the "recently published" list
+  // at 20, so assert the FEATURE renders >=1 entry rather than a specific seed
+  // (seeds are asserted by name in the search + package-page tests below).
+  const count = await page.$$eval(".pkg-name", (els) => els.length);
+  assert.ok(count >= 1, "home page should list at least one recent package");
 });
 
 test("HTMX search swaps results into #results", async () => {

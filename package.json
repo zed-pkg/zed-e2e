@@ -17,7 +17,8 @@
     "cluster:test-cli": "bash cluster/test-cli.sh",
     "cluster:e2e": "bash cluster/e2e.sh",
     "typecheck": "tsc --noEmit",
-    "test": "npm run e2e"
+    "test": "npm run e2e",
+    "cluster:remote-grid": "bash cluster/remote-grid.sh"
   },
   "license": "MIT",
   "devDependencies": {

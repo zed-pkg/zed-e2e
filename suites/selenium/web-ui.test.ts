@@ -18,7 +18,11 @@ before(async () => {
   // avoids the @types subtype mismatch on setChromeOptions.
   const options = new chrome.Options();
   options.addArguments("--headless=new", "--no-sandbox", "--disable-dev-shm-usage");
-  driver = await new Builder().forBrowser("chrome").setChromeOptions(options).build();
+  // Remote-browser support (doc 13): point at a remote Selenium Grid via
+  // SELENIUM_REMOTE_URL, else drive a local chromedriver.
+  const builder = new Builder().forBrowser("chrome").setChromeOptions(options);
+  if (process.env.SELENIUM_REMOTE_URL) builder.usingServer(process.env.SELENIUM_REMOTE_URL);
+  driver = await builder.build();
 });
 
 after(async () => {

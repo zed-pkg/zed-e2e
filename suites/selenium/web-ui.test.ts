@@ -26,11 +26,14 @@ after(async () => {
   await stopStack();
 });
 
-test("home page lists seed packages", async () => {
+test("home page renders the recency list", async () => {
   await driver.get(`${WEB_URL}/`);
-  const list = await driver.wait(until.elementLocated(By.css(".pkg-list")), 10_000);
-  const text = await list.getText();
-  assert.match(text, /http-kit/);
+  await driver.wait(until.elementLocated(By.css(".pkg-list")), 10_000);
+  // Registry-state-agnostic (the recent list caps at 20): assert the feature
+  // renders >=1 entry, not a specific seed. Seeds are asserted by name in the
+  // search + package-page tests below.
+  const names = await driver.findElements(By.css(".pkg-name"));
+  assert.ok(names.length >= 1, "home page should list at least one recent package");
 });
 
 test("HTMX live search returns matches", async () => {

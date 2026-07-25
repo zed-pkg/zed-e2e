@@ -1,0 +1,30 @@
+# Root "app of apps": a single Application whose source is the directory of
+# child Application manifests (cluster/argocd/apps). Argo CD renders that
+# directory, creating the child Applications, each of which then syncs a real
+# workload. This is the same app-of-apps shape the ORES platform uses to
+# register a tenant — scoped here to the throwaway kind cluster.
+#
+# Prereq: the manifests must be reachable at repoURL/targetRevision, i.e. this
+# branch of zed-e2e must be pushed to GitHub before the root app can sync.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: zed-e2e-root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: zed-e2e
+  source:
+    repoURL: https://github.com/zed-pkg/zed-e2e.git
+    targetRevision: main
+    path: cluster/argocd/apps
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - ServerSideApply=true

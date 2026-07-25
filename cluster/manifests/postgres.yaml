@@ -1,0 +1,95 @@
+# Ephemeral Postgres for the in-cluster e2e — metadata only (orgs, packages,
+# versions, tokens). Artifact BLOBS never touch this; they live in the API
+# pod's in-memory (tmpfs) store. Data is an emptyDir, so the DB is wiped when
+# the pod restarts — exactly what a throwaway test wants.
+#
+# In production the servers reach Supabase/Postgres over egress via a DSN from
+# the ESO-synced secret; here we run our own PG and hand both servers the DSN
+# through the plain `zed-secrets` Secret below.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: zed-secrets
+  namespace: zed
+type: Opaque
+stringData:
+  # Both servers consume a full libpq DSN as DATABASE_URL. Service DNS
+  # `zed-postgres` resolves within the namespace. The db name matches the
+  # harness's hardcoded DSN (harness/stack.ts) so `npm run cluster:e2e` can
+  # reuse the existing suites against the cluster over a PG port-forward.
+  DATABASE_URL: "postgres://zed:zed@zed-postgres:5432/zed_e2e"
+  POSTGRES_USER: "zed"
+  POSTGRES_PASSWORD: "zed"
+  POSTGRES_DB: "zed_e2e"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zed-postgres
+  namespace: zed
+  labels:
+    app: zed-postgres
+    app.kubernetes.io/part-of: zed
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zed-postgres
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: zed-postgres
+        app.kubernetes.io/part-of: zed
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: pg
+              containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: zed-secrets
+          # PGDATA under a subdir of the mount keeps initdb happy on emptyDir.
+          env:
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "zed", "-d", "zed_e2e"]
+            initialDelaySeconds: 3
+            periodSeconds: 3
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "zed", "-d", "zed_e2e"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zed-postgres
+  namespace: zed
+  labels:
+    app: zed-postgres
+    app.kubernetes.io/part-of: zed
+spec:
+  type: ClusterIP
+  selector:
+    app: zed-postgres
+  ports:
+    - name: pg
+      port: 5432
+      targetPort: pg

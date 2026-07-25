@@ -1,0 +1,25 @@
+# Child Application: the in-memory zed-pkg stack (namespace + ephemeral
+# Postgres + both servers), rendered from the kustomization at
+# cluster/manifests. Managed by the zed-e2e-root app-of-apps.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: zed-inmemory
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: zed-e2e
+  source:
+    repoURL: https://github.com/zed-pkg/zed-e2e.git
+    targetRevision: main
+    path: cluster/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: zed
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - ServerSideApply=true
+      # The overlay creates the `zed` Namespace itself, so CreateNamespace is
+      # unnecessary; leaving it off keeps parity with the production apps.

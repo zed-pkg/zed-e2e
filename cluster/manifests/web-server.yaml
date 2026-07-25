@@ -1,0 +1,87 @@
+# dd-zed-web-server — in-cluster e2e (in-memory) profile.
+#
+# The web UI is read-only over the API server's Postgres. Test-profile changes:
+#   • image ghcr.io/zed-pkg/zed-web-server:dev, IfNotPresent (kind-loaded)
+#   • PUBLIC_REGISTRY_URL points at the host-mapped API NodePort so the install
+#     snippets the UI renders are copy-pasteable on the host
+#   • DATABASE_URL from the shared in-cluster Postgres (zed-secrets)
+#   • NodePort Service on 30081 (kind maps host 48081 -> 30081)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-zed-web-server
+  namespace: zed
+  labels:
+    app: dd-zed-web-server
+    app.kubernetes.io/name: dd-zed-web-server
+    app.kubernetes.io/part-of: zed
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dd-zed-web-server
+  template:
+    metadata:
+      labels:
+        app: dd-zed-web-server
+        app.kubernetes.io/name: dd-zed-web-server
+        app.kubernetes.io/part-of: zed
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: zed-web-server
+          image: ghcr.io/zed-pkg/zed-web-server:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8081
+          env:
+            - { name: BIND_ADDR, value: "0.0.0.0:8081" }
+            - { name: PUBLIC_REGISTRY_URL, value: "http://127.0.0.1:48080" }
+            - { name: RUST_LOG, value: "info" }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: zed-secrets, key: DATABASE_URL }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-zed-web-server
+  namespace: zed
+  labels:
+    app: dd-zed-web-server
+    app.kubernetes.io/part-of: zed
+spec:
+  type: NodePort
+  selector:
+    app: dd-zed-web-server
+  ports:
+    - name: http
+      port: 8081
+      targetPort: http
+      nodePort: 30081

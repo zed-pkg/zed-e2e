@@ -302,8 +302,10 @@ function reapPidFiles(): void {
  * the binary was recorded carry no path — treat those as unverifiable and
  * skip them rather than risk a wrong kill (they are reaped by their own
  * process exit or by `docker rm -f` for postgres).
+ *
+ * Exported for `harness/stack.test.ts`; not part of the harness API.
  */
-function isStillOurProcess(pid: number, bin: string): boolean {
+export function isStillOurProcess(pid: number, bin: string): boolean {
   if (!bin) return false;
   try {
     const args = execFileSync("ps", ["-p", String(pid), "-o", "args="], {

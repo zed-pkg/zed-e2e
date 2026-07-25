@@ -246,15 +246,24 @@ function reapPidFiles(): void {
   }
   for (const entry of entries) {
     if (!entry.endsWith(".pid")) continue;
-    const pidStr = (() => {
+    const pidFile = path.join(STATE_DIR, entry);
+    const [pidStr = "", bin = ""] = (() => {
       try {
-        return readFileSync(path.join(STATE_DIR, entry), "utf8").trim();
+        return readFileSync(pidFile, "utf8").trim().split("\n");
       } catch {
-        return "";
+        return [];
       }
     })();
-    const pid = Number(pidStr);
+    const pid = Number(pidStr.trim());
+    // Always drop the pidfile, even when we decide not to kill: a stale file
+    // that outlives its process is exactly what makes a recycled pid dangerous.
+    try {
+      unlinkSync(pidFile);
+    } catch {
+      /* already gone */
+    }
     if (!Number.isInteger(pid) || pid <= 0) continue;
+    if (!isStillOurProcess(pid, bin.trim())) continue;
     for (const sig of ["SIGTERM", "SIGKILL"] as const) {
       try {
         process.kill(pid, sig);
@@ -262,6 +271,26 @@ function reapPidFiles(): void {
         break; // already gone (ESRCH) or not ours (EPERM)
       }
     }
+  }
+}
+
+/**
+ * Is `pid` still running the binary we spawned? Guards against killing an
+ * unrelated process that inherited a recycled pid. Pidfiles written before
+ * the binary was recorded carry no path — treat those as unverifiable and
+ * skip them rather than risk a wrong kill (they are reaped by their own
+ * process exit or by `docker rm -f` for postgres).
+ */
+function isStillOurProcess(pid: number, bin: string): boolean {
+  if (!bin) return false;
+  try {
+    const args = execFileSync("ps", ["-p", String(pid), "-o", "args="], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return args.includes(bin);
+  } catch {
+    return false; // ps failed or the pid is gone
   }
 }
 

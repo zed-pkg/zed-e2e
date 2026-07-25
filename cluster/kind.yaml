@@ -1,0 +1,19 @@
+# kind cluster for the zed-pkg in-cluster e2e.
+#
+# A single-node cluster is enough to prove the GitOps deploy + run the CLI/UI
+# suites against cluster-hosted servers. The two extraPortMappings expose the
+# NodePort Services on the SAME host ports the local-process harness uses
+# (48080 API, 48081 web), so the existing Playwright/Puppeteer/Selenium suites
+# run unchanged against the cluster via ZED_E2E_API_URL / ZED_E2E_WEB_URL.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: zed-e2e
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 48080
+        protocol: TCP
+      - containerPort: 30081
+        hostPort: 48081
+        protocol: TCP

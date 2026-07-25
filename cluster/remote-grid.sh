@@ -24,15 +24,16 @@ bad(){ printf '\033[1;31m  FAIL\033[0m %s\n' "$*"; fails=$((fails+1)); }
 
 # One scenario == a /run request body (JSON), plus a substring we expect to find
 # in the response's `extracted` map. __BASE__ is replaced with the target URL.
-# The node reader (fed on stdin) takes the body as argv[2] and prints a compact
-# JSON verdict; SERVER_AUTH_SECRET comes from the pod's own env.
-READER='const b=process.argv[2];fetch("http://localhost:8104/run",{method:"POST",headers:{"content-type":"application/json","x-server-auth":process.env.SERVER_AUTH_SECRET},body:b}).then(r=>r.json()).then(j=>console.log(JSON.stringify({ok:j.ok,title:j.finalTitle,extracted:j.extracted||{},errs:(j.pageErrors||[]).length}))).catch(e=>console.log(JSON.stringify({ok:false,error:e.message})))'
+# The request body is handed to the pod's Node via an env var (BODY) — `node -e`
+# with an env read is the invocation that survives `kubectl exec` (piping a
+# script to `node /dev/stdin` does not); SERVER_AUTH_SECRET is the pod's own.
+READER='const b=process.env.BODY;fetch("http://localhost:8104/run",{method:"POST",headers:{"content-type":"application/json","x-server-auth":process.env.SERVER_AUTH_SECRET},body:b}).then(r=>r.json()).then(j=>console.log(JSON.stringify({ok:j.ok,title:j.finalTitle,extracted:j.extracted||{},errs:(j.pageErrors||[]).length}))).catch(e=>console.log(JSON.stringify({ok:false,error:e.message})))'
 
 # scenario name | expected-extract-substring | steps-json (with __BASE__)
 run_scenario() { # tool name expect steps
   local tool="$1" name="$2" expect="$3" steps="$4"
   local body; body="$(printf '{"tool":"%s","steps":%s}' "$tool" "${steps//__BASE__/$BASE}")"
-  local out; out="$("${K[@]}" exec -i "$DEPLOY" -- node /dev/stdin "$body" <<<"$READER" 2>/dev/null)"
+  local out; out="$("${K[@]}" exec "$DEPLOY" -- env "BODY=$body" node -e "$READER" 2>/dev/null)"
   if printf '%s' "$out" | grep -q '"ok":true' && printf '%s' "$out" | grep -qF "$expect"; then
     pass "$tool / $name"
   else

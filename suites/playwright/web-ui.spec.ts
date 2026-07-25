@@ -14,7 +14,11 @@ test.describe("zed-web-server UI", () => {
     await expect(page.locator(".brand")).toContainText("zed");
     const list = page.locator(".pkg-list");
     await expect(list).toBeVisible();
-    await expect(list).toContainText("http-kit");
+    // Assert the recency FEATURE renders package entries, not that a specific
+    // seed is still in the top 20 — that assumption breaks on any populated
+    // registry (e.g. after the concurrency suites publish dozens of packages).
+    // The seed packages are verified by name in the API contract + search specs.
+    await expect(list.locator(".pkg-name").first()).toBeVisible();
   });
 
   test("HTMX live search returns matching results into #results", async ({ page }) => {
@@ -35,9 +39,13 @@ test.describe("zed-web-server UI", () => {
 
   test("package name links from the home list to the package page", async ({ page }) => {
     await page.goto(`${WEB_URL}/`);
-    await page.locator('.pkg-name', { hasText: "cryptobox" }).first().click();
-    await expect(page).toHaveURL(/\/p\/acme\/cryptobox/);
-    await expect(page.locator(".snippet")).toContainText("zed add acme/cryptobox");
+    // Click whatever the most-recent entry is (registry-state-agnostic) and
+    // assert it navigates to that package's page with an install snippet.
+    const first = page.locator(".pkg-name").first();
+    await expect(first).toBeVisible();
+    await first.click();
+    await expect(page).toHaveURL(/\/p\/[^/]+\/[^/]+/);
+    await expect(page.locator(".snippet")).toContainText("zed add");
   });
 
   test("responses carry the security headers", async ({ page }) => {

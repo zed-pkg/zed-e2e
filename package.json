@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "e2e": "npm run e2e:playwright && npm run e2e:puppeteer && npm run e2e:selenium",
+    "test:harness": "tsx --test harness/*.test.ts",
     "e2e:playwright": "playwright test",
     "e2e:puppeteer": "tsx --test suites/puppeteer/*.test.ts",
     "e2e:selenium": "tsx --test suites/selenium/*.test.ts",

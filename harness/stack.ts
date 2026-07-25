@@ -13,7 +13,16 @@
  */
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdirSync, writeFileSync, readFileSync, readdirSync, openSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+  openSync,
+  rmSync,
+  unlinkSync,
+} from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import os from "node:os";
@@ -138,7 +147,10 @@ function spawnLogged(name: string, bin: string, args: string[], env: NodeJS.Proc
     detached: true,
   });
   child.unref();
-  writeFileSync(path.join(STATE_DIR, `${name}.pid`), String(child.pid ?? ""));
+  // Record the binary alongside the pid: a bare pid is not a safe kill target
+  // once the OS recycles it, so the reaper verifies the live process is still
+  // this binary before signalling it.
+  writeFileSync(path.join(STATE_DIR, `${name}.pid`), `${child.pid ?? ""}\n${bin}\n`);
   return child;
 }
 
@@ -163,15 +175,37 @@ export async function startStack(): Promise<Stack> {
   mkdirSync(artifactsDir, { recursive: true });
 
   // Fail fast and clearly on a port collision rather than silently testing
-  // against whatever else is bound here.
+  // against whatever else is bound here. A listener we just SIGKILLed above
+  // can linger for a moment, so re-check briefly before declaring a conflict.
   for (const [port, label] of [[API_PORT, "api"], [WEB_PORT, "web"]] as const) {
-    if (await portInUse(port)) {
-      throw new Error(
-        `port ${port} (${label}) is already in use — a previous stack may still be running; run \`npm run stack:down\``,
-      );
-    }
+    if (await portFreesUp(port)) continue;
+    throw new Error(
+      `port ${port} (${label}) is already in use — a previous stack may still be running; run \`npm run stack:down\``,
+    );
   }
 
+  // Past this point we own real resources (a container, detached servers). Any
+  // failure must tear them down: Playwright skips globalTeardown when
+  // globalSetup throws, so without this the stack leaks for the whole run.
+  try {
+    return await bootStack(artifactsDir);
+  } catch (error) {
+    await stopStack().catch(() => {});
+    throw error;
+  }
+}
+
+/** Wait out a just-killed listener; true once `port` is free. */
+async function portFreesUp(port: number, timeoutMs = 2_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (!(await portInUse(port))) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+async function bootStack(artifactsDir: string): Promise<Stack> {
   await startPostgres();
   await buildServers();
 
@@ -234,15 +268,24 @@ function reapPidFiles(): void {
   }
   for (const entry of entries) {
     if (!entry.endsWith(".pid")) continue;
-    const pidStr = (() => {
+    const pidFile = path.join(STATE_DIR, entry);
+    const [pidStr = "", bin = ""] = (() => {
       try {
-        return readFileSync(path.join(STATE_DIR, entry), "utf8").trim();
+        return readFileSync(pidFile, "utf8").trim().split("\n");
       } catch {
-        return "";
+        return [];
       }
     })();
-    const pid = Number(pidStr);
+    const pid = Number(pidStr.trim());
+    // Always drop the pidfile, even when we decide not to kill: a stale file
+    // that outlives its process is exactly what makes a recycled pid dangerous.
+    try {
+      unlinkSync(pidFile);
+    } catch {
+      /* already gone */
+    }
     if (!Number.isInteger(pid) || pid <= 0) continue;
+    if (!isStillOurProcess(pid, bin.trim())) continue;
     for (const sig of ["SIGTERM", "SIGKILL"] as const) {
       try {
         process.kill(pid, sig);
@@ -250,6 +293,28 @@ function reapPidFiles(): void {
         break; // already gone (ESRCH) or not ours (EPERM)
       }
     }
+  }
+}
+
+/**
+ * Is `pid` still running the binary we spawned? Guards against killing an
+ * unrelated process that inherited a recycled pid. Pidfiles written before
+ * the binary was recorded carry no path — treat those as unverifiable and
+ * skip them rather than risk a wrong kill (they are reaped by their own
+ * process exit or by `docker rm -f` for postgres).
+ *
+ * Exported for `harness/stack.test.ts`; not part of the harness API.
+ */
+export function isStillOurProcess(pid: number, bin: string): boolean {
+  if (!bin) return false;
+  try {
+    const args = execFileSync("ps", ["-p", String(pid), "-o", "args="], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return args.includes(bin);
+  } catch {
+    return false; // ps failed or the pid is gone
   }
 }
 

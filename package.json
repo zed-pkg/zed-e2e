@@ -9,6 +9,7 @@
     "e2e:playwright": "playwright test",
     "e2e:puppeteer": "tsx --test suites/puppeteer/*.test.ts",
     "e2e:selenium": "tsx --test suites/selenium/*.test.ts",
+    "e2e:cluster-grid": "node --test suites/cluster-grid/*.test.mjs",
     "stack:up": "tsx harness/stack-cli.ts up",
     "stack:down": "tsx harness/stack-cli.ts down",
     "cluster:up": "bash cluster/up.sh",

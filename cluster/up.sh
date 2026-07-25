@@ -32,6 +32,9 @@ if [ "$USE_ARGOCD" = "1" ]; then
 else
   log "applying in-memory profile (kubectl apply -k)"
   "${KCTL[@]}" apply -k "$MANIFESTS_DIR"
+  # A same-tag :dev reload leaves existing pods on the old image, so nudge the
+  # servers to re-pull the just-loaded image. No-op on a first apply.
+  "${KCTL[@]}" -n "$NAMESPACE" rollout restart deploy/dd-zed-api-server deploy/dd-zed-web-server 2>/dev/null || true
 fi
 
 # 4. Wait for rollouts.

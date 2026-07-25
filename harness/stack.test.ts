@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 
-import { isStillOurProcess } from "./stack.ts";
+import { isStillOurProcess } from "./stack.js";
 
 test("a live process is recognized by its own binary path", () => {
   // This test process is node; execPath is exactly what `ps -o args=` shows.

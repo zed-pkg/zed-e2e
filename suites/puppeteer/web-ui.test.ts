@@ -12,12 +12,20 @@ let page: Page;
 before(async () => {
   await startStack();
   await ensureSeeded();
-  browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
+  // Remote-browser support (doc 13): connect to a browser deployed in a grid on
+  // the ORES clusters via its CDP/ws endpoint (PUPPETEER_BROWSER_WS), else
+  // launch a local Chromium.
+  const ws = process.env.PUPPETEER_BROWSER_WS;
+  browser = ws
+    ? await puppeteer.connect({ browserWSEndpoint: ws })
+    : await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
   page = await browser.newPage();
 });
 
 after(async () => {
-  await browser?.close();
+  // disconnect (not close) a remote browser so the shared grid pod survives.
+  if (process.env.PUPPETEER_BROWSER_WS) await browser?.disconnect();
+  else await browser?.close();
   await stopStack();
 });
 

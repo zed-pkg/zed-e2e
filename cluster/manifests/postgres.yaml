@@ -14,11 +14,13 @@ metadata:
 type: Opaque
 stringData:
   # Both servers consume a full libpq DSN as DATABASE_URL. Service DNS
-  # `zed-postgres` resolves within the namespace.
-  DATABASE_URL: "postgres://zed:zed@zed-postgres:5432/zed"
+  # `zed-postgres` resolves within the namespace. The db name matches the
+  # harness's hardcoded DSN (harness/stack.ts) so `npm run cluster:e2e` can
+  # reuse the existing suites against the cluster over a PG port-forward.
+  DATABASE_URL: "postgres://zed:zed@zed-postgres:5432/zed_e2e"
   POSTGRES_USER: "zed"
   POSTGRES_PASSWORD: "zed"
-  POSTGRES_DB: "zed"
+  POSTGRES_DB: "zed_e2e"
 ---
 apiVersion: apps/v1
 kind: Deployment

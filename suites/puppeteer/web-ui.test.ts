@@ -23,7 +23,9 @@ before(async () => {
 });
 
 after(async () => {
-  await browser?.close();
+  // disconnect (not close) a remote browser so the shared grid pod survives.
+  if (process.env.PUPPETEER_BROWSER_WS) await browser?.disconnect();
+  else await browser?.close();
   await stopStack();
 });
 

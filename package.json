@@ -11,6 +11,11 @@
     "e2e:selenium": "tsx --test suites/selenium/*.test.ts",
     "stack:up": "tsx harness/stack-cli.ts up",
     "stack:down": "tsx harness/stack-cli.ts down",
+    "cluster:up": "bash cluster/up.sh",
+    "cluster:up:argocd": "bash cluster/up.sh --argocd",
+    "cluster:down": "bash cluster/down.sh",
+    "cluster:test-cli": "bash cluster/test-cli.sh",
+    "cluster:e2e": "bash cluster/e2e.sh",
     "typecheck": "tsc --noEmit",
     "test": "npm run e2e"
   },

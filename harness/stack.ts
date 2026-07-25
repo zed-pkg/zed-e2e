@@ -175,15 +175,37 @@ export async function startStack(): Promise<Stack> {
   mkdirSync(artifactsDir, { recursive: true });
 
   // Fail fast and clearly on a port collision rather than silently testing
-  // against whatever else is bound here.
+  // against whatever else is bound here. A listener we just SIGKILLed above
+  // can linger for a moment, so re-check briefly before declaring a conflict.
   for (const [port, label] of [[API_PORT, "api"], [WEB_PORT, "web"]] as const) {
-    if (await portInUse(port)) {
-      throw new Error(
-        `port ${port} (${label}) is already in use — a previous stack may still be running; run \`npm run stack:down\``,
-      );
-    }
+    if (await portFreesUp(port)) continue;
+    throw new Error(
+      `port ${port} (${label}) is already in use — a previous stack may still be running; run \`npm run stack:down\``,
+    );
   }
 
+  // Past this point we own real resources (a container, detached servers). Any
+  // failure must tear them down: Playwright skips globalTeardown when
+  // globalSetup throws, so without this the stack leaks for the whole run.
+  try {
+    return await bootStack(artifactsDir);
+  } catch (error) {
+    await stopStack().catch(() => {});
+    throw error;
+  }
+}
+
+/** Wait out a just-killed listener; true once `port` is free. */
+async function portFreesUp(port: number, timeoutMs = 2_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (!(await portInUse(port))) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+async function bootStack(artifactsDir: string): Promise<Stack> {
   await startPostgres();
   await buildServers();
 

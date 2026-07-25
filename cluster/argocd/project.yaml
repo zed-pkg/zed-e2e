@@ -1,0 +1,26 @@
+# AppProject for the in-cluster e2e. This mirrors the production tenant project
+# (ORES k8s-cluster: remote/argocd/projects/zed.appproject.yaml) but with two
+# deliberate test-profile relaxations:
+#   • sourceRepos is the zed-e2e repo (it carries the in-memory overlay), not
+#     the per-app repos.
+#   • clusterResourceWhitelist allows Namespace, because the test overlay
+#     creates the `zed` namespace itself. In production that namespace is a
+#     Layer-1 object owned by k8s-cluster, so the prod project keeps
+#     clusterResourceWhitelist: [].
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: zed-e2e
+  namespace: argocd
+spec:
+  description: "In-cluster e2e for zed-pkg — in-memory profile on a throwaway kind cluster."
+  sourceRepos:
+    - "https://github.com/zed-pkg/zed-e2e.git"
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: zed
+    - server: https://kubernetes.default.svc
+      namespace: argocd
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace

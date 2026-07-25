@@ -13,7 +13,16 @@
  */
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdirSync, writeFileSync, readFileSync, readdirSync, openSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+  openSync,
+  rmSync,
+  unlinkSync,
+} from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import os from "node:os";

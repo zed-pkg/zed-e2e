@@ -1,0 +1,16 @@
+# In-memory e2e profile for the zed-pkg registry, deployable two ways:
+#   • directly:  kubectl apply -k cluster/manifests
+#   • via GitOps: the ArgoCD app-of-apps in cluster/argocd points a child
+#     Application at this path (see cluster/argocd/apps/*.application.yaml).
+#
+# This is a self-contained TEST profile, intentionally NOT the production
+# GitOps source of truth. Production manifests live in each app repo's k8s/
+# (zed-api-server.rs/k8s, zed-web-server.rs/k8s) and are registered onto the
+# ORES cluster by remote/argocd/apps/zed.applications.yaml.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  - api-server.yaml
+  - web-server.yaml

@@ -1,9 +1,17 @@
 name: ci
 
+# This suite's real inputs are the *sibling repos'* default branches, which
+# change without any commit landing here — so a push/PR trigger alone leaves
+# cross-repo breakage invisible until someone happens to touch zed-e2e.
+# workflow_dispatch allows re-validating the stack on demand after a sibling
+# ships; the nightly schedule catches drift nobody thought to check.
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 7 * * *"
 
 jobs:
   e2e:

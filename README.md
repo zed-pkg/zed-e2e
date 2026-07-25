@@ -49,3 +49,15 @@ npm run stack:down
 Ports: API `48080`, web `48081`, Postgres `55432` (container `zed-e2e-postgres`).
 Logs and state live under `.stack/`. The CLI runs against a throwaway `ZED_PKG_HOME`
 under `.stack/zed-pkg-home` so your real `~/.zed-pkg` store is never touched.
+
+## CI triggers
+
+This suite's inputs are the **sibling repos' default branches**, which move
+without any commit landing here. So beyond push/PR, CI also runs:
+
+- **on demand** — `gh workflow run ci --repo zed-pkg/zed-e2e --ref main`, the
+  right check after a sibling repo ships something the stack depends on;
+- **nightly** (07:17 UTC) — catches cross-repo drift nobody thought to verify.
+
+A failure here with no zed-e2e commit behind it usually means version skew:
+a sibling's `main` changed under the suite.

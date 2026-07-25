@@ -9,7 +9,9 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 require kubectl; require cargo
-ORG="clitest"
+# Unique org per run so the smoke is re-runnable against a persistent registry
+# (published versions are immutable, so a fixed org/name/version 409s on rerun).
+ORG="clitest${RANDOM}"
 PKG="widget-kit"
 VER="1.4.2"
 

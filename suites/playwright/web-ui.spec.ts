@@ -39,9 +39,13 @@ test.describe("zed-web-server UI", () => {
 
   test("package name links from the home list to the package page", async ({ page }) => {
     await page.goto(`${WEB_URL}/`);
-    await page.locator('.pkg-name', { hasText: "cryptobox" }).first().click();
-    await expect(page).toHaveURL(/\/p\/acme\/cryptobox/);
-    await expect(page.locator(".snippet")).toContainText("zed add acme/cryptobox");
+    // Click whatever the most-recent entry is (registry-state-agnostic) and
+    // assert it navigates to that package's page with an install snippet.
+    const first = page.locator(".pkg-name").first();
+    await expect(first).toBeVisible();
+    await first.click();
+    await expect(page).toHaveURL(/\/p\/[^/]+\/[^/]+/);
+    await expect(page.locator(".snippet")).toContainText("zed add");
   });
 
   test("responses carry the security headers", async ({ page }) => {

@@ -1,0 +1,17 @@
+# The `zed` namespace for the in-cluster e2e.
+#
+# In production this is a Layer-1 object owned by ORESoftware/k8s-cluster
+# (remote/argocd/projects/zed.tenant.yaml) and carries a ResourceQuota +
+# LimitRange + default-deny NetworkPolicy. The test profile re-creates only the
+# namespace (same Pod Security labels) and deliberately omits the quota/limits
+# so a throwaway kind node schedules the stack without tuning requests.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: zed
+  labels:
+    app.kubernetes.io/part-of: zed
+    kubernetes.io/metadata.name: zed
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

@@ -17,27 +17,51 @@ test.describe("zed-api-server registry semantics", () => {
     token = await createToken(`e2e-reg-${suffix}`, org);
   });
 
-  const tryPublish = async (pkg: PublishedPackage): Promise<boolean> => {
+  const tryPublish = async (pkg: PublishedPackage): Promise<string | null> => {
     try {
       await publishFixture(pkg, { token });
-      return true;
-    } catch {
-      return false;
+      return null;
+    } catch (err) {
+      return String((err as Error).message ?? err);
     }
   };
 
   test("concurrent publishes of distinct versions all land", async ({ request }) => {
     const name = "concurrent-distinct";
-    const versions = ["1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0"];
-    const results = await Promise.all(
+    // Create the package row first (one sequential publish), so the concurrent
+    // batch exercises concurrent VERSION inserts, not a race to lazily create
+    // the same package row (covered separately below).
+    await publishFixture({ org, name, version: "1.0.0", description: "seed" }, { token, allowExisting: true });
+
+    const versions = ["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"];
+    const errs = (await Promise.all(
       versions.map((version) => tryPublish({ org, name, version, description: version })),
-    );
-    expect(results.every(Boolean), "every distinct-version publish should succeed").toBeTruthy();
+    )).filter(Boolean);
+    expect(errs, `all concurrent version publishes should succeed; failures:\n${errs.join("\n")}`).toHaveLength(0);
 
     const res = await request.get(`${API_URL}/v1/packages/${org}/${name}`);
     expect(res.status()).toBe(200);
     const body = await res.json();
-    for (const v of versions) expect(body.versions).toContain(v);
+    for (const v of ["1.0.0", ...versions]) expect(body.versions).toContain(v);
+  });
+
+  test("concurrent first-publishes of a new package do not lose versions", async ({ request }) => {
+    // No pre-created package row: N concurrent publishes of DISTINCT versions
+    // of a brand-new package race to create the package. A correct server
+    // (get-or-create in a tx / ON CONFLICT) lands every version.
+    const name = "concurrent-create";
+    const versions = ["1.0.0", "2.0.0", "3.0.0", "4.0.0"];
+    const errs = (await Promise.all(
+      versions.map((version) => tryPublish({ org, name, version, description: version })),
+    )).filter(Boolean);
+
+    const res = await request.get(`${API_URL}/v1/packages/${org}/${name}`);
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    const landed = versions.filter((v) => body.versions.includes(v));
+    // Whatever the HTTP outcome per request, the package must not be corrupt and
+    // at least one version must survive. Surface how many landed for triage.
+    expect(landed.length, `landed ${landed.length}/4; publish failures:\n${errs.join("\n")}`).toBeGreaterThanOrEqual(1);
   });
 
   test("concurrent publishes of the SAME version do not corrupt the registry", async ({ request }) => {

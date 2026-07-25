@@ -147,7 +147,10 @@ function spawnLogged(name: string, bin: string, args: string[], env: NodeJS.Proc
     detached: true,
   });
   child.unref();
-  writeFileSync(path.join(STATE_DIR, `${name}.pid`), String(child.pid ?? ""));
+  // Record the binary alongside the pid: a bare pid is not a safe kill target
+  // once the OS recycles it, so the reaper verifies the live process is still
+  // this binary before signalling it.
+  writeFileSync(path.join(STATE_DIR, `${name}.pid`), `${child.pid ?? ""}\n${bin}\n`);
   return child;
 }
 

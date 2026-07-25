@@ -9,6 +9,7 @@ browser frameworks plus the `zed` CLI drive it:
 | `suites/playwright` | Playwright Test | Web UI flows (browse, search, package pages) + API contract + CLI publish/install round-trips |
 | `suites/puppeteer` | Puppeteer + `node:test` | Web UI smoke + HTMX behaviors in raw Chromium |
 | `suites/selenium` | selenium-webdriver + `node:test` | Cross-driver UI verification (chromedriver) |
+| `suites/cluster-grid` | deployed k8s browser grid | Drives a live zed site through the AWS/Hetzner `dd-browser-test-server` under playwright/puppeteer/selenium — no local browser. Opt-in; see [docs/cluster-grid.md](docs/cluster-grid.md) |
 
 ## Prerequisites
 

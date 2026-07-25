@@ -103,6 +103,10 @@ name = "after-yank"
 version = "0.1.0"
 license = "MIT"
 
+[package.repository]
+vcs = "git"
+url = "https://github.com/$ORG/after-yank"
+
 [dependencies]
 "$ORG/$PKG" = "$VER"
 EOF

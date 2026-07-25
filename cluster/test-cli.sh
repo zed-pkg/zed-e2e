@@ -78,6 +78,10 @@ name = "consumer-app"
 version = "0.1.0"
 license = "MIT"
 
+[package.repository]
+vcs = "git"
+url = "https://github.com/$ORG/consumer-app"
+
 [dependencies]
 "$ORG/$PKG" = "$VER"
 EOF

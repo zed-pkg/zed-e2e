@@ -119,19 +119,23 @@ test.describe("zed-api-server registry semantics", () => {
     expect(missing.status()).toBe(404);
   });
 
-  test("a token cannot publish to an org it is not scoped to", async () => {
-    const otherOrg = `victim-${suffix}`;
+  test("a token cannot publish to an org owned by someone else", async () => {
+    // The victim org EXISTS and is owned by a DIFFERENT token, so this tests
+    // authorization (403), not mere non-existence (404 org_not_found).
+    const victimOrg = `victim-${suffix}`;
+    await createToken(`e2e-victim-${suffix}`, victimOrg); // creates + claims the org under another token
     const dir = mkdtempSync(path.join(os.tmpdir(), "zed-xorg-"));
     try {
       writeFileSync(
         path.join(dir, ".zpkg.toml"),
-        `[package]\norg = "${otherOrg}"\nname = "sneaky"\nversion = "1.0.0"\ndescription = "x"\n\n` +
-          `[package.repository]\nvcs = "git"\nurl = "https://github.com/${otherOrg}/sneaky"\n`,
+        `[package]\norg = "${victimOrg}"\nname = "sneaky"\nversion = "1.0.0"\ndescription = "x"\n\n` +
+          `[package.repository]\nvcs = "git"\nurl = "https://github.com/${victimOrg}/sneaky"\n`,
       );
       writeFileSync(path.join(dir, "LICENSE"), "MIT\n");
+      // Publish to the victim org using OUR (reg-*) token.
       const res = await runZed(["publish", "--skip-vcs-checks"], { cwd: dir, env: { ZED_PKG_TOKEN: token } });
       expect(res.code, "cross-org publish must be rejected").not.toBe(0);
-      expect(res.stderr.toLowerCase()).toMatch(/unauth|forbidden|403|401|scope/);
+      expect(res.stderr.toLowerCase()).toMatch(/unauth|forbidden|403|401|scope|not allowed|permission/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

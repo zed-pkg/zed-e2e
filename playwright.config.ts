@@ -23,5 +23,6 @@ export default defineConfig({
     baseURL: process.env.ZED_E2E_WEB_URL ?? "http://127.0.0.1:48081",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    ...(PW_CONNECT_WS ? { connectOptions: { wsEndpoint: PW_CONNECT_WS } } : {}),
   },
 });

@@ -13,15 +13,12 @@ require kubectl
 ARGOCD_VERSION="${ARGOCD_VERSION:-stable}"   # pin to a tag for reproducibility
 ARGOCD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 1. Install Argo CD.
-if ! "${KCTL[@]}" get ns argocd >/dev/null 2>&1; then
-  log "installing Argo CD ($ARGOCD_VERSION) into namespace argocd"
-  "${KCTL[@]}" create namespace argocd
-  "${KCTL[@]}" apply -n argocd \
-    -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
-else
-  log "Argo CD namespace already present — reusing"
-fi
+# 1. Install Argo CD. --server-side is required: the ApplicationSet CRD's
+# annotations exceed the 262144-byte limit of client-side (last-applied) apply.
+"${KCTL[@]}" get ns argocd >/dev/null 2>&1 || "${KCTL[@]}" create namespace argocd
+log "installing Argo CD ($ARGOCD_VERSION) into namespace argocd (server-side apply)"
+"${KCTL[@]}" apply -n argocd --server-side --force-conflicts \
+  -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
 
 log "waiting for Argo CD control plane to be ready"
 for d in argocd-repo-server argocd-server argocd-application-controller; do

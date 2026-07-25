@@ -90,7 +90,7 @@ pass "install materialized zed_modules/ + pinned .zpkg.lock"
 
 # 5. yank hides the version from fresh resolution ----------------------------
 log "zed yank $ORG/$PKG@$VER"
-( cd "$PKG_DIR" && zed yank "$ORG/$PKG" --version "$VER" ) || die "yank failed"
+( cd "$PKG_DIR" && zed yank "$ORG/$PKG@$VER" ) || die "yank failed"
 FRESH="$(mktemp -d "${TMPDIR:-/tmp}/zed-cli-fresh.XXXXXX")"
 cat > "$FRESH/.zpkg.toml" <<EOF
 [package]

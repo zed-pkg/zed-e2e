@@ -14,7 +14,11 @@ test.describe("zed-web-server UI", () => {
     await expect(page.locator(".brand")).toContainText("zed");
     const list = page.locator(".pkg-list");
     await expect(list).toBeVisible();
-    await expect(list).toContainText("http-kit");
+    // Assert the recency FEATURE renders package entries, not that a specific
+    // seed is still in the top 20 — that assumption breaks on any populated
+    // registry (e.g. after the concurrency suites publish dozens of packages).
+    // The seed packages are verified by name in the API contract + search specs.
+    await expect(list.locator(".pkg-name").first()).toBeVisible();
   });
 
   test("HTMX live search returns matching results into #results", async ({ page }) => {

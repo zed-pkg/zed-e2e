@@ -239,10 +239,26 @@ async function bootStack(artifactsDir: string): Promise<Stack> {
  * Mint a publish token via the api server's `create-token` subcommand.
  * Scoped to `org` (also creates the org). The plaintext token is the last
  * non-empty line the command prints.
+ *
+ * `role` selects the RBAC role (`owner` | `publisher` | `reader`); the server
+ * defaults to `owner` when omitted, which is what most suites want.
  */
-export async function createToken(name: string, org: string): Promise<string> {
+export async function createToken(name: string, org: string, role?: string): Promise<string> {
+  return mintToken(["create-token", "--name", name, "--org", org, ...(role ? ["--role", role] : [])]);
+}
+
+/**
+ * Mint an **unscoped admin** token (no `--org`): owner-equivalent in every
+ * org. Needed to exercise cross-org operations such as claiming a fresh
+ * namespace and then reading that namespace's audit log.
+ */
+export async function createAdminToken(name: string): Promise<string> {
+  return mintToken(["create-token", "--name", name]);
+}
+
+async function mintToken(args: string[]): Promise<string> {
   const bin = path.join(API_REPO, "target/debug/zed-api-server");
-  const { stdout } = await sh(bin, ["create-token", "--name", name, "--org", org], {
+  const { stdout } = await sh(bin, args, {
     env: { DATABASE_URL },
   });
   const lines = stdout.trim().split("\n").filter(Boolean);

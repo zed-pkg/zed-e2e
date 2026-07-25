@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, lstatSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { runZed, createToken } from "../../harness/stack.js";
@@ -121,11 +121,16 @@ test.describe("zed CLI advanced", () => {
       const add = await runZed(["add", `${org}/addable`], { cwd: dir });
       expect(add.code, add.stderr).toBe(0);
       expect(readFileSync(path.join(dir, ".zpkg.toml"), "utf8")).toContain(`${org}/addable`);
-      expect(existsSync(path.join(dir, "zed_modules", org, "addable"))).toBeTruthy();
+      const link = path.join(dir, "zed_modules", org, "addable");
+      expect(existsSync(link)).toBeTruthy();
+      // Linked pnpm-style, and the lockfile pins the added dependency.
+      expect(lstatSync(link).isSymbolicLink()).toBeTruthy();
+      expect(readFileSync(path.join(dir, ".zpkg.lock"), "utf8")).toContain(`name = "addable"`);
 
       const remove = await runZed(["remove", `${org}/addable`], { cwd: dir });
       expect(remove.code, remove.stderr).toBe(0);
       expect(readFileSync(path.join(dir, ".zpkg.toml"), "utf8")).not.toContain(`${org}/addable`);
+      expect(existsSync(link), "remove unlinks the package from zed_modules").toBeFalsy();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

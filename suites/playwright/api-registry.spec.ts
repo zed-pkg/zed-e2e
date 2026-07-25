@@ -59,9 +59,9 @@ test.describe("zed-api-server registry semantics", () => {
     expect(res.status()).toBe(200);
     const body = await res.json();
     const landed = versions.filter((v) => body.versions.includes(v));
-    // Whatever the HTTP outcome per request, the package must not be corrupt and
-    // at least one version must survive. Surface how many landed for triage.
-    expect(landed.length, `landed ${landed.length}/4; publish failures:\n${errs.join("\n")}`).toBeGreaterThanOrEqual(1);
+    // A correct get-or-create must land EVERY version even when all N requests
+    // race to create the package row. Losing any is a package-creation race bug.
+    expect(landed.length, `landed ${landed.length}/4; publish failures:\n${errs.join("\n")}`).toBe(4);
   });
 
   test("concurrent publishes of the SAME version do not corrupt the registry", async ({ request }) => {

@@ -68,7 +68,7 @@ export async function publishFixture(
       env: { ZED_PKG_TOKEN: opts.token },
     });
     if (res.code !== 0) {
-      const alreadyExists = /version_exists|already published/i.test(res.stderr);
+      const alreadyExists = /version_exists|already (?:published|exists)/i.test(res.stderr);
       if (opts.allowExisting && alreadyExists) return pkg;
       throw new Error(`publish ${pkg.org}/${pkg.name}@${pkg.version} failed:\n${res.stderr}`);
     }

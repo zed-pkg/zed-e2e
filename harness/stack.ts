@@ -38,10 +38,25 @@ export const API_REPO = path.join(REPO_ROOT, "zed-api-server.rs");
 export const WEB_REPO = path.join(REPO_ROOT, "zed-web-server.rs");
 export const CLI_REPO = path.join(REPO_ROOT, "zed-cli");
 
-const PG_CONTAINER = "zed-e2e-postgres";
-const PG_PORT = 55432;
-const API_PORT = 48080;
-const WEB_PORT = 48081;
+const PG_CONTAINER = process.env.ZED_E2E_PG_CONTAINER ?? "zed-e2e-postgres";
+
+/** Ports are overridable so a local run can coexist with an already-deployed
+ *  stack — notably the `zed-e2e` kind cluster, whose NodePorts publish the API
+ *  and web server on these same defaults. Without an override the two collide
+ *  and the harness (correctly) refuses to run. */
+function port(envVar: string, fallback: number): number {
+  const raw = process.env[envVar];
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+    throw new Error(`${envVar} must be an integer port 1-65535, got ${JSON.stringify(raw)}`);
+  }
+  return parsed;
+}
+
+const PG_PORT = port("ZED_E2E_PG_PORT", 55432);
+const API_PORT = port("ZED_E2E_API_PORT", 48080);
+const WEB_PORT = port("ZED_E2E_WEB_PORT", 48081);
 
 export const DATABASE_URL = `postgres://zed:zed@127.0.0.1:${PG_PORT}/zed_e2e`;
 export const API_URL = process.env.ZED_E2E_API_URL ?? `http://127.0.0.1:${API_PORT}`;

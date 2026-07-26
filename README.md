@@ -33,6 +33,7 @@ npm install
 npx playwright install chromium
 
 npm run e2e             # all three suites (playwright -> puppeteer -> selenium)
+npm run e2e:auth        # CLI Supabase/shared-auth aliases + token lifecycle
 npm run e2e:playwright
 npm run e2e:puppeteer
 npm run e2e:selenium
@@ -49,3 +50,12 @@ npm run stack:down
 Ports: API `48080`, web `48081`, Postgres `55432` (container `zed-e2e-postgres`).
 Logs and state live under `.stack/`. The CLI runs against a throwaway `ZED_PKG_HOME`
 under `.stack/zed-pkg-home` so your real `~/.zed-pkg` store is never touched.
+
+## Tagged release testing
+
+`.github/workflows/tagged-e2e.yml` runs the full stack with an immutable zed CLI
+ref. For a zed CLI release, create the same `v*` tag in this repository; the
+workflow checks out the matching `zed-cli` tag and current server components.
+It can also be launched manually with explicit tag or SHA inputs for every
+component. Tags are preferred for releases, while SHAs remain available for
+one-off diagnostics.

@@ -68,6 +68,9 @@ export async function publishFixture(
       env: { ZED_PKG_TOKEN: opts.token },
     });
     if (res.code !== 0) {
+      // The CLI now distinguishes a retry-safe byte-identical publish from a
+      // same-version/different-artifact conflict. Both are an existing
+      // immutable version for fixtures that explicitly opt into reuse.
       const alreadyExists = /version_exists|already (?:published|exists)/i.test(res.stderr);
       if (opts.allowExisting && alreadyExists) return pkg;
       throw new Error(`publish ${pkg.org}/${pkg.name}@${pkg.version} failed:\n${res.stderr}`);

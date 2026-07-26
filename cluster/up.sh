@@ -19,8 +19,16 @@ else
   kind create cluster --config "$CLUSTER_DIR/kind.yaml" --wait 90s
 fi
 
-# 2. Images (build unless already present) + load into the node.
-if ! docker image inspect "$API_IMAGE" >/dev/null 2>&1 || ! docker image inspect "$WEB_IMAGE" >/dev/null 2>&1; then
+# 2. Images + load into the node. A mutable local :dev tag does not prove the
+# image contains the current checkout, so rebuild by default. Developers can
+# explicitly opt into reuse for an unchanged source tree.
+if [ "${ZED_E2E_REUSE_IMAGES:-0}" = "1" ]; then
+  if ! docker image inspect "$API_IMAGE" >/dev/null 2>&1 || ! docker image inspect "$WEB_IMAGE" >/dev/null 2>&1; then
+    "$CLUSTER_DIR/build-images.sh"
+  else
+    log "reusing local images (ZED_E2E_REUSE_IMAGES=1)"
+  fi
+else
   "$CLUSTER_DIR/build-images.sh"
 fi
 log "loading images into kind"

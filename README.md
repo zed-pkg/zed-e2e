@@ -59,3 +59,15 @@ workflow checks out the matching `zed-cli` tag and current server components.
 It can also be launched manually with explicit tag or SHA inputs for every
 component. Tags are preferred for releases, while SHAs remain available for
 one-off diagnostics.
+
+## CI triggers
+
+This suite's inputs are the **sibling repos' default branches**, which move
+without any commit landing here. So beyond push/PR, CI also runs:
+
+- **on demand** — `gh workflow run ci --repo zed-pkg/zed-e2e --ref main`, the
+  right check after a sibling repo ships something the stack depends on;
+- **nightly** (07:17 UTC) — catches cross-repo drift nobody thought to verify.
+
+A failure here with no zed-e2e commit behind it usually means version skew:
+a sibling's `main` changed under the suite.

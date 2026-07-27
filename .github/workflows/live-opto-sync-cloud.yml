@@ -72,8 +72,10 @@ jobs:
           e2e = tomllib.loads(Path('opto-sync-e2e/.zpkg.toml').read_text())
 
           assert syncer['package']['org'] == 'opto-sync'
-          assert syncer['package']['name'] == 'syncer'
+          assert syncer['package']['name'] == 'syncer-packages'
           assert syncer['package']['version'] == '0.2.1'
+          assert syncer['targets']['repository']['name'] == 'syncer'
+          assert syncer['targets']['repository']['dir'] == '.'
           assert clients['package']['name'] == 'opto-sync-clients'
           assert clients['package']['version'] == '0.2.0'
           assert clients.get('dependencies', {}) == {}

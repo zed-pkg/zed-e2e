@@ -10,8 +10,6 @@ on:
     paths:
       - '.github/workflows/live-opto-sync-cloud.yml'
       - 'docs/live-opto-sync-cloud.md'
-  schedule:
-    - cron: '17 8 * * *'
   workflow_dispatch:
 
 permissions:
@@ -91,9 +89,9 @@ jobs:
           test "$nested" = "$gitlink"
 
   live-roundtrip:
-    name: ${{ matrix.cloud }} publish → install → frozen reinstall
+    name: ${{ matrix.cloud }} public publish → install → frozen reinstall
     needs: dependency-contract
-    if: needs.dependency-contract.result == 'success'
+    if: github.event_name == 'workflow_dispatch' && needs.dependency-contract.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -110,8 +108,6 @@ jobs:
     env:
       ZED_PKG_REGISTRY: ${{ matrix.registry }}
       ZED_PKG_HOME: ${{ github.workspace }}/.zed-home-${{ matrix.cloud }}
-      # The temporary cloud profile has auth disabled. Supplying an opaque token
-      # still exercises the normal authenticated CLI header path and is harmless.
       ZED_PKG_TOKEN: bootstrap-opto-sync-e2e
     steps:
       - name: Checkout zed CLI

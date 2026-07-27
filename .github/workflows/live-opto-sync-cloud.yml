@@ -92,8 +92,8 @@ jobs:
 
   live-roundtrip:
     name: ${{ matrix.cloud }} publish → install → frozen reinstall
-    if: github.event_name != 'pull_request'
     needs: dependency-contract
+    if: needs.dependency-contract.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:

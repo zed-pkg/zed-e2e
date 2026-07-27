@@ -76,7 +76,7 @@ jobs:
           assert syncer['package']['version'] == '0.2.1'
           assert clients['package']['name'] == 'opto-sync-clients'
           assert clients['package']['version'] == '0.2.0'
-          assert clients['dependencies']['opto-sync/syncer'] == '^0.2.1'
+          assert clients.get('dependencies', {}) == {}
           assert e2e['package']['name'] == 'opto-sync-e2e'
           assert e2e['package']['version'] == '0.1.0'
           assert e2e['dependencies']['opto-sync/syncer'] == '^0.2.1'

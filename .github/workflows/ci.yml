@@ -13,6 +13,10 @@ on:
   schedule:
     - cron: "17 7 * * *"
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   e2e:
     runs-on: ubuntu-latest
@@ -21,23 +25,28 @@ jobs:
         with:
           repository: zed-pkg/zed-e2e
           path: zed-e2e
+          persist-credentials: false
       # Sibling checkouts the harness builds and drives.
       - uses: actions/checkout@v4
         with:
           repository: zed-pkg/zed-interfaces
           path: zed-interfaces
+          persist-credentials: false
       - uses: actions/checkout@v4
         with:
           repository: zed-pkg/zed-cli
           path: zed-cli
+          persist-credentials: false
       - uses: actions/checkout@v4
         with:
           repository: zed-pkg/zed-api-server.rs
           path: zed-api-server.rs
+          persist-credentials: false
       - uses: actions/checkout@v4
         with:
           repository: zed-pkg/zed-web-server.rs
           path: zed-web-server.rs
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -50,18 +59,31 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: zed-e2e/package-lock.json
 
       - name: Install e2e deps
         working-directory: zed-e2e
         run: |
-          npm ci || npm install
+          npm ci
           npx playwright install --with-deps chromium
 
       - name: Typecheck
         working-directory: zed-e2e
         run: npm run typecheck
 
-      # Docker (Postgres) is available on ubuntu-latest runners by default.
+      # The harness currently starts `postgres:16-alpine`. Prime that local tag
+      # with the exact pgvector image required by the API's vector migration;
+      # `docker run` will use this already-present local image rather than pull
+      # plain PostgreSQL from the registry.
+      - name: Pin pgvector Postgres for the browser harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull pgvector/pgvector:0.8.5-pg16
+          docker tag pgvector/pgvector:0.8.5-pg16 postgres:16-alpine
+          test "$(docker image inspect postgres:16-alpine --format '{{index .RepoDigests 0}}')" != ''
+
       - name: Run e2e (playwright + puppeteer + selenium)
         working-directory: zed-e2e
         run: npm run e2e

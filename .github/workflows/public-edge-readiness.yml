@@ -1,0 +1,140 @@
+name: public edge readiness
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/public-edge-readiness.yml'
+      - 'scripts/check-zed-public-edge.sh'
+      - 'docs/public-edge-readiness.md'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/public-edge-readiness.yml'
+      - 'scripts/check-zed-public-edge.sh'
+      - 'docs/public-edge-readiness.md'
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      enforce:
+        description: Fail when any public endpoint is not ready
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: public edge probe contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate shell syntax
+        run: bash -n scripts/check-zed-public-edge.sh
+
+      - name: Exercise ready, report-only, and enforced failure modes
+        shell: bash
+        run: |
+          set -euo pipefail
+          fake_bin="$RUNNER_TEMP/fake-bin"
+          mkdir -p "$fake_bin"
+          cat > "$fake_bin/getent" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          [[ "${*: -1}" != 'missing.example.invalid' ]]
+          echo '192.0.2.10 STREAM example'
+          SH
+          cat > "$fake_bin/openssl" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cat >/dev/null
+          echo 'Verify return code: 0 (ok)'
+          SH
+          cat > "$fake_bin/curl" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          headers=''
+          body=''
+          while (($#)); do
+            case "$1" in
+              -D) headers="$2"; shift 2 ;;
+              -o) body="$2"; shift 2 ;;
+              *) shift ;;
+            esac
+          done
+          [[ -z "$headers" ]] || printf 'HTTP/2 200\ncontent-type: text/plain\n' > "$headers"
+          [[ -z "$body" ]] || printf 'ok\n' > "$body"
+          SH
+          chmod +x "$fake_bin/getent" "$fake_bin/openssl" "$fake_bin/curl"
+          export PATH="$fake_bin:$PATH"
+
+          bash scripts/check-zed-public-edge.sh \
+            https://registry.aws.example.invalid/healthz true "$RUNNER_TEMP/ready.txt"
+          grep -q '^overall=ready$' "$RUNNER_TEMP/ready.txt"
+
+          bash scripts/check-zed-public-edge.sh \
+            https://missing.example.invalid/healthz false "$RUNNER_TEMP/report-only.txt"
+          grep -q '^overall=not-ready$' "$RUNNER_TEMP/report-only.txt"
+
+          if bash scripts/check-zed-public-edge.sh \
+            https://missing.example.invalid/healthz true "$RUNNER_TEMP/enforced.txt"; then
+            echo 'enforced probe unexpectedly accepted a missing endpoint' >&2
+            exit 1
+          fi
+
+  probe:
+    name: probe ${{ matrix.name }}
+    needs: contract
+    if: needs.contract.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: aws-registry
+            url: https://registry.aws.zpkg.tech/healthz
+          - name: aws-web
+            url: https://aws.zpkg.tech/healthz
+          - name: hetzner-registry
+            url: https://registry.hetzner.zpkg.tech/healthz
+          - name: hetzner-web
+            url: https://hetzner.zpkg.tech/healthz
+    env:
+      EDGE_ENFORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.enforce || false }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Probe DNS, TLS, and HTTPS health
+        run: |
+          mkdir -p evidence
+          bash scripts/check-zed-public-edge.sh \
+            '${{ matrix.url }}' "$EDGE_ENFORCE" 'evidence/${{ matrix.name }}.txt'
+
+      - name: Add endpoint evidence to the job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### ${{ matrix.name }}'
+            echo
+            echo '```text'
+            cat 'evidence/${{ matrix.name }}.txt' 2>/dev/null || echo 'probe produced no evidence file'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload public edge evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-edge-${{ matrix.name }}
+          path: evidence/${{ matrix.name }}.txt
+          if-no-files-found: warn
+          retention-days: 30

@@ -73,15 +73,15 @@ jobs:
           chmod +x "$fake_bin/getent" "$fake_bin/openssl" "$fake_bin/curl"
           export PATH="$fake_bin:$PATH"
 
-          scripts/check-zed-public-edge.sh \
+          bash scripts/check-zed-public-edge.sh \
             https://registry.aws.example.invalid/healthz true "$RUNNER_TEMP/ready.txt"
           grep -q '^overall=ready$' "$RUNNER_TEMP/ready.txt"
 
-          scripts/check-zed-public-edge.sh \
+          bash scripts/check-zed-public-edge.sh \
             https://missing.example.invalid/healthz false "$RUNNER_TEMP/report-only.txt"
           grep -q '^overall=not-ready$' "$RUNNER_TEMP/report-only.txt"
 
-          if scripts/check-zed-public-edge.sh \
+          if bash scripts/check-zed-public-edge.sh \
             https://missing.example.invalid/healthz true "$RUNNER_TEMP/enforced.txt"; then
             echo 'enforced probe unexpectedly accepted a missing endpoint' >&2
             exit 1
@@ -115,7 +115,7 @@ jobs:
       - name: Probe DNS, TLS, and HTTPS health
         run: |
           mkdir -p evidence
-          scripts/check-zed-public-edge.sh \
+          bash scripts/check-zed-public-edge.sh \
             '${{ matrix.url }}' "$EDGE_ENFORCE" 'evidence/${{ matrix.name }}.txt'
 
       - name: Add endpoint evidence to the job summary

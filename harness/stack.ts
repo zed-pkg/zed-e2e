@@ -9,7 +9,8 @@
  * Environment overrides:
  *   ZED_E2E_API_URL / ZED_E2E_WEB_URL  -- point suites at an already-running
  *                                         stack instead of booting one.
- *   ZED_E2E_KEEP=1                     -- leave the stack up after the run.
+ *   ZED_E2E_PG_IMAGE                  -- pgvector-enabled Postgres image.
+ *   ZED_E2E_KEEP=1                    -- leave the stack up after the run.
  */
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
@@ -39,6 +40,8 @@ export const WEB_REPO = path.join(REPO_ROOT, "zed-web-server.rs");
 export const CLI_REPO = path.join(REPO_ROOT, "zed-cli");
 
 const PG_CONTAINER = process.env.ZED_E2E_PG_CONTAINER ?? "zed-e2e-postgres";
+const PG_IMAGE =
+  process.env.ZED_E2E_PG_IMAGE ?? "pgvector/pgvector:0.8.6-pg16-bookworm";
 
 /** Ports are overridable so a local run can coexist with an already-deployed
  *  stack — notably the `zed-e2e` kind cluster, whose NodePorts publish the API
@@ -121,24 +124,54 @@ async function startPostgres(): Promise<void> {
     "-e", "POSTGRES_PASSWORD=zed",
     "-e", "POSTGRES_DB=zed_e2e",
     "-p", `${PG_PORT}:5432`,
-    "postgres:16-alpine",
+    PG_IMAGE,
   ]);
   const deadline = Date.now() + 60_000;
+  let ready = false;
+  let lastReadinessError: unknown;
   while (Date.now() < deadline) {
     try {
-      // The alpine entrypoint runs a transient internal server during init, so
-      // `pg_isready` inside the container can pass before the host port is
-      // actually forwarding. Require BOTH: in-container readiness AND a
-      // host-side TCP connect to 127.0.0.1:PG_PORT, or the API server's
-      // no-retry `Database::connect` (5s) can lose the race and exit.
-      await sh("docker", ["exec", PG_CONTAINER, "pg_isready", "-U", "zed", "-d", "zed_e2e"]);
-      if (await portInUse(PG_PORT)) return;
-    } catch {
-      // not ready yet
+      // `pg_isready` only proves that a server accepts connections; it can
+      // return success while the official image's entrypoint is still creating
+      // POSTGRES_DB. Require a real query against the target database as well
+      // as the host-side TCP listener so migrations cannot race initialization.
+      const { stdout } = await sh("docker", [
+        "exec", PG_CONTAINER,
+        "psql", "-U", "zed", "-d", "zed_e2e",
+        "-v", "ON_ERROR_STOP=1", "-Atqc", "select 1",
+      ]);
+      if (stdout.trim() === "1" && await portInUse(PG_PORT)) {
+        ready = true;
+        break;
+      }
+    } catch (error) {
+      lastReadinessError = error;
     }
     await new Promise((r) => setTimeout(r, 400));
   }
-  throw new Error("postgres container did not become ready");
+  if (!ready) {
+    throw new Error(
+      `postgres container ${PG_CONTAINER} (${PG_IMAGE}) did not become query-ready: ${lastReadinessError}`,
+    );
+  }
+
+  // The API's migrations create the vector extension and an HNSW index. A
+  // plain postgres image starts successfully but then makes the API crash at
+  // migration time, which used to surface only as a one-minute health timeout.
+  // Verify the required extension before compiling or spawning either server.
+  const { stdout } = await sh("docker", [
+    "exec", PG_CONTAINER,
+    "psql", "-U", "zed", "-d", "zed_e2e",
+    "-v", "ON_ERROR_STOP=1", "-Atqc",
+    "select default_version from pg_available_extensions where name = 'vector'",
+  ]);
+  const vectorVersion = stdout.trim();
+  if (!vectorVersion) {
+    throw new Error(
+      `postgres image ${PG_IMAGE} does not provide the required pgvector extension`,
+    );
+  }
+  console.log(`postgres ready with pgvector ${vectorVersion} (${PG_IMAGE})`);
 }
 
 async function buildServers(): Promise<void> {

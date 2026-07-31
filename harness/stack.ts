@@ -128,25 +128,31 @@ async function startPostgres(): Promise<void> {
   ]);
   const deadline = Date.now() + 60_000;
   let ready = false;
+  let lastReadinessError: unknown;
   while (Date.now() < deadline) {
     try {
-      // The image entrypoint runs a transient internal server during init, so
-      // `pg_isready` inside the container can pass before the host port is
-      // actually forwarding. Require BOTH: in-container readiness AND a
-      // host-side TCP connect to 127.0.0.1:PG_PORT, or the API server's
-      // initial database connection can lose the race and exit.
-      await sh("docker", ["exec", PG_CONTAINER, "pg_isready", "-U", "zed", "-d", "zed_e2e"]);
-      if (await portInUse(PG_PORT)) {
+      // `pg_isready` only proves that a server accepts connections; it can
+      // return success while the official image's entrypoint is still creating
+      // POSTGRES_DB. Require a real query against the target database as well
+      // as the host-side TCP listener so migrations cannot race initialization.
+      const { stdout } = await sh("docker", [
+        "exec", PG_CONTAINER,
+        "psql", "-U", "zed", "-d", "zed_e2e",
+        "-v", "ON_ERROR_STOP=1", "-Atqc", "select 1",
+      ]);
+      if (stdout.trim() === "1" && await portInUse(PG_PORT)) {
         ready = true;
         break;
       }
-    } catch {
-      // not ready yet
+    } catch (error) {
+      lastReadinessError = error;
     }
     await new Promise((r) => setTimeout(r, 400));
   }
   if (!ready) {
-    throw new Error(`postgres container ${PG_CONTAINER} (${PG_IMAGE}) did not become ready`);
+    throw new Error(
+      `postgres container ${PG_CONTAINER} (${PG_IMAGE}) did not become query-ready: ${lastReadinessError}`,
+    );
   }
 
   // The API's migrations create the vector extension and an HNSW index. A

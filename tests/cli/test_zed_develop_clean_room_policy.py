@@ -94,6 +94,16 @@ class CleanRoomWorkflowPolicyTests(unittest.TestCase):
         self.assertIn("cargo build", self.workflow)
         self.assertIn("--locked", self.workflow)
 
+    def test_policy_validation_is_bytecode_free_and_does_not_hide_mutation(self) -> None:
+        self.assertRegex(
+            self.workflow,
+            r"(?m)^\s{2}PYTHONDONTWRITEBYTECODE:\s*'1'\s*$",
+        )
+        self.assertIn("compile(source, str(path), \"exec\")", self.workflow)
+        self.assertNotIn("python3 -m py_compile", self.workflow)
+        for cleanup in ("rm -rf", "find . -name '__pycache__'", "git clean"):
+            self.assertNotIn(cleanup, self.workflow)
+
     def test_evidence_is_short_lived_non_secret_and_uploaded_on_failure(self) -> None:
         self.assertIn("Upload non-secret acceptance evidence", self.workflow)
         self.assertRegex(

@@ -10,6 +10,8 @@
  *   ZED_E2E_API_URL / ZED_E2E_WEB_URL  -- point suites at an already-running
  *                                         stack instead of booting one.
  *   ZED_E2E_PG_IMAGE                  -- pgvector-enabled Postgres image.
+ *   ZED_E2E_STORAGE_BACKEND           -- `local` (default) or `memory`.
+ *   ZED_E2E_STORAGE_MEMORY_MAX_BYTES  -- bounded process-memory total.
  *   ZED_E2E_KEEP=1                    -- leave the stack up after the run.
  */
 import { execFile, spawn, type ChildProcess } from "node:child_process";
@@ -257,6 +259,23 @@ async function bootStack(artifactsDir: string): Promise<Stack> {
   await startPostgres();
   await buildServers();
 
+  const storageBackend = process.env.ZED_E2E_STORAGE_BACKEND ?? "local";
+  if (storageBackend !== "local" && storageBackend !== "memory") {
+    throw new Error(
+      `ZED_E2E_STORAGE_BACKEND must be local or memory, got ${JSON.stringify(storageBackend)}`,
+    );
+  }
+  const storageEnv: NodeJS.ProcessEnv = storageBackend === "memory"
+    ? {
+        STORAGE_BACKEND: "memory",
+        STORAGE_MEMORY_MAX_BYTES:
+          process.env.ZED_E2E_STORAGE_MEMORY_MAX_BYTES ?? "268435456",
+      }
+    : {
+        STORAGE_BACKEND: "local",
+        STORAGE_LOCAL_DIR: artifactsDir,
+      };
+
   apiProc = spawnLogged("api", path.join(API_REPO, "target/debug/zed-api-server"), [], {
     DATABASE_URL,
     BIND_ADDR: `127.0.0.1:${API_PORT}`,
@@ -264,8 +283,7 @@ async function bootStack(artifactsDir: string): Promise<Stack> {
     // artifact download_url in version metadata. The default localhost:8080
     // would send the CLI to the wrong port.
     PUBLIC_BASE_URL: API_URL,
-    STORAGE_BACKEND: "local",
-    STORAGE_LOCAL_DIR: artifactsDir,
+    ...storageEnv,
     RUST_LOG: "info",
   }, API_REPO);
 

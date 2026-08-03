@@ -14,6 +14,12 @@ on:
 permissions:
   contents: read
 
+# The memory backend is merged on the API default branch. Keep this as a branch
+# input—not a permanent SHA pin—so the nightly suite remains a compatibility
+# canary for API/CLI/web/interface drift.
+env:
+  ZED_E2E_API_REF: main
+
 concurrency:
   group: zed-e2e-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -56,6 +62,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-api-server.rs
+          ref: ${{ env.ZED_E2E_API_REF }}
           path: zed-api-server.rs
           persist-credentials: false
           show-progress: false
@@ -66,6 +73,15 @@ jobs:
           path: zed-web-server.rs
           persist-credentials: false
           show-progress: false
+
+      - name: Verify default-branch memory-backend source
+        run: |
+          set -euo pipefail
+          api_revision="$(git -C zed-api-server.rs rev-parse HEAD)"
+          test -n "$api_revision"
+          grep -q 'StorageConfig::Memory' zed-api-server.rs/src/storage.rs
+          grep -q 'STORAGE_MEMORY_MAX_BYTES' zed-api-server.rs/src/config.rs
+          printf 'api_revision=%s\n' "$api_revision"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
@@ -98,13 +114,39 @@ jobs:
         working-directory: zed-e2e
         run: npm run typecheck
 
-      - name: Run e2e (Playwright, Puppeteer, Selenium)
+      # Boot once, then make every framework an external-stack consumer. This
+      # is both the intended shared-state model and the correct model for a
+      # process-memory registry: restarting the API between frameworks would
+      # erase the packages under test. It also removes the Docker container-name
+      # race caused by independent framework teardowns and concurrent Node test
+      # files trying to recreate Postgres.
+      - name: Start one bounded memory-backed registry stack
         working-directory: zed-e2e
         env:
           # Official pgvector 0.8.6 + Postgres 16 Bookworm, pinned to the
           # linux/amd64 manifest used by GitHub's ubuntu-24.04 runners.
           ZED_E2E_PG_IMAGE: pgvector/pgvector:0.8.6-pg16-bookworm@sha256:84a355869251af1a3379cfc9fa7b4dbf962c03f642a4bb7b339a203925071c43
+          ZED_E2E_STORAGE_BACKEND: memory
+          ZED_E2E_STORAGE_MEMORY_MAX_BYTES: "268435456"
+        run: npm run stack:up
+
+      - name: Run e2e (Playwright, Puppeteer, Selenium)
+        working-directory: zed-e2e
+        env:
+          ZED_E2E_API_URL: http://127.0.0.1:48080
+          ZED_E2E_WEB_URL: http://127.0.0.1:48081
         run: npm run e2e
+
+      - name: Prove package artifacts never touched disk
+        working-directory: zed-e2e
+        run: |
+          set -euo pipefail
+          test -d .stack/artifacts
+          if find .stack/artifacts -type f -print -quit | grep -q .; then
+            echo 'memory-backed publication unexpectedly wrote artifact files' >&2
+            find .stack/artifacts -type f -maxdepth 4 -print >&2
+            exit 1
+          fi
 
       - name: Capture stack diagnostics
         if: failure()

@@ -69,10 +69,25 @@ test.describe("zed-api-server registry semantics", () => {
     const results = await Promise.all(
       Array.from({ length: 5 }, () => tryPublish({ org, name, version: "1.0.0", description: "same" })),
     );
-    const wins = results.filter(Boolean).length;
-    // Versions are immutable: at least one publish commits, and the racers that
-    // lose must not create duplicates or corrupt the row.
-    expect(wins).toBeGreaterThanOrEqual(1);
+    const successes = results.filter((result) => result === null).length;
+    const failures = results.filter((result): result is string => result !== null);
+    // `zed publish` makes a byte-identical retry idempotent: a racer that sees
+    // the committed row during its preflight exits successfully without a
+    // second PUT. A racer already inside the API can instead lose the unique-
+    // index race and receive the expected immutable-version conflict. Both
+    // schedules are valid, but at least one command must succeed and no other
+    // failure class is acceptable.
+    expect(
+      successes,
+      `at least one concurrent publish must succeed; failures:\n${failures.join("\n")}`,
+    ).toBeGreaterThanOrEqual(1);
+    const unexpected = failures.filter(
+      (failure) => !/version_exists|already (?:published|exists)/i.test(failure),
+    );
+    expect(
+      unexpected,
+      `same-version racers may only lose with an immutable-version conflict:\n${unexpected.join("\n")}`,
+    ).toHaveLength(0);
 
     const res = await request.get(`${API_URL}/v1/packages/${org}/${name}`);
     expect(res.status()).toBe(200);

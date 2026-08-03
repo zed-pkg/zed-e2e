@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "repository": "zed-pkg/zed-e2e",
   "syncRepository": "zed-pkg/zed-sync",
+  "syncRef": "agent/den-1386-opto-sync-zed-adapter",
   "syncPullRequest": 4,
   "rolloutIssue": "DEN-1386",
   "releaseGates": ["DEN-309", "DEN-363"],

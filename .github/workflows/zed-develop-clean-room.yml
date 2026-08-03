@@ -5,11 +5,13 @@ name: zed develop clean-room contract
     paths:
       - '.github/workflows/zed-develop-clean-room.yml'
       - 'tests/cli/zed_develop_clean_room.py'
+      - 'tests/cli/test_zed_develop_clean_room_policy.py'
   push:
     branches: [main]
     paths:
       - '.github/workflows/zed-develop-clean-room.yml'
       - 'tests/cli/zed_develop_clean_room.py'
+      - 'tests/cli/test_zed_develop_clean_room_policy.py'
   schedule:
     - cron: '23 8 * * 1'
   workflow_dispatch:
@@ -78,6 +80,16 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.13'
+
+      - name: Audit the workflow policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            zed-e2e/tests/cli/zed_develop_clean_room.py \
+            zed-e2e/tests/cli/test_zed_develop_clean_room_policy.py
+          python3 -m unittest -v \
+            zed-e2e/tests/cli/test_zed_develop_clean_room_policy.py
 
       - name: Install Linux shell fixtures
         if: runner.os == 'Linux'

@@ -70,7 +70,9 @@ test.describe("zed r2g server-backed certification", () => {
       );
       expect(retryOutput).toContain("artifact installs and its smoke_test succeeds");
 
-      writeFileSync(path.join(project, "marker.txt"), "server-backed-r2g-changed\n");
+      // The changed fixture also fails its smoke test. That gives this case a
+      // second fail-closed boundary if immutable-version rejection ever drifts.
+      writeFileSync(path.join(project, "marker.txt"), "mutated-artifact\n");
       const changed = await run();
       const changedOutput = `${changed.stdout}\n${changed.stderr}`;
       expect(changed.code, changedOutput).not.toBe(0);

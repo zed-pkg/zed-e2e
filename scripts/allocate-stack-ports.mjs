@@ -3,6 +3,7 @@
 import { spawn } from 'node:child_process';
 import { appendFile } from 'node:fs/promises';
 import net from 'node:net';
+import { fileURLToPath } from 'node:url';
 
 const DEFAULTS = Object.freeze({
   pg: 55432,
@@ -187,17 +188,17 @@ async function runCommand(command, env) {
 async function main() {
   const { githubEnv, command } = parseCli(process.argv.slice(2));
   const allocation = await allocateStackPorts();
-  const persisted = allocationEnvironment(allocation);
+  const complete = allocationEnvironment(allocation);
+  const ownedStackEnvironment = Object.fromEntries(
+    Object.entries(complete).filter(([key]) => !['ZED_E2E_API_URL', 'ZED_E2E_WEB_URL'].includes(key)),
+  );
   await appendFile(
     githubEnv,
-    `${Object.entries(persisted).map(([key, value]) => `${key}=${value}`).join('\n')}\n`,
+    `${Object.entries(ownedStackEnvironment).map(([key, value]) => `${key}=${value}`).join('\n')}\n`,
     { encoding: 'utf8', mode: 0o600 },
   );
 
-  const childEnv = { ...process.env, ...persisted };
-  // The stack must boot locally from the selected numeric ports. URL overrides
-  // are persisted only for later consumer steps, where they deliberately mark
-  // the already-running stack as external.
+  const childEnv = { ...process.env, ...ownedStackEnvironment };
   delete childEnv.ZED_E2E_API_URL;
   delete childEnv.ZED_E2E_WEB_URL;
 
@@ -206,7 +207,7 @@ async function main() {
   process.exitCode = code;
 }
 
-const isMain = process.argv[1] && new URL(import.meta.url).pathname === process.argv[1];
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
   main().catch((error) => {
     console.error(`stack port allocation failed: ${error?.stack ?? error}`);

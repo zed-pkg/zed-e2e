@@ -1,0 +1,169 @@
+name: zed develop clean-room contract
+
+'on':
+  pull_request:
+    paths:
+      - '.github/workflows/zed-develop-clean-room.yml'
+      - 'tests/cli/zed_develop_clean_room.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/zed-develop-clean-room.yml'
+      - 'tests/cli/zed_develop_clean_room.py'
+  schedule:
+    - cron: '23 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zed-develop-clean-room-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  ZED_CLI_SHA: 7e5ac1897a872223f8316ef1c3342a2fa1982504
+  ZED_INTERFACES_SHA: dc0e0a0620b9462817950b552d3d334a184b1cb1
+  FLAGS2ENV_SHA: 2f62e40932a0fcb8b9bf1b4c84473e34fa3c51c7
+  CARGO_TERM_COLOR: always
+
+jobs:
+  clean-room:
+    name: ${{ matrix.os }} clean-room shell contract
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - macos-15
+
+    steps:
+      - name: Check out exact E2E candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: zed-e2e
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Check out exact Zed CLI candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_SHA }}
+          path: zed-cli
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Check out exact interface contract
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-interfaces
+          ref: ${{ env.ZED_INTERFACES_SHA }}
+          path: zed-interfaces
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+
+      - name: Install Python 3.13
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.13'
+
+      - name: Install Linux shell fixtures
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y fish zsh
+
+      - name: Verify immutable inputs and record the clean-room toolchain
+        shell: bash
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/zed-develop/${{ runner.os }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_DIR"
+
+          e2e_revision="$(git -C zed-e2e rev-parse HEAD)"
+          cli_revision="$(git -C zed-cli rev-parse HEAD)"
+          interfaces_revision="$(git -C zed-interfaces rev-parse HEAD)"
+          expected_e2e="${{ github.event.pull_request.head.sha || github.sha }}"
+
+          test "$e2e_revision" = "$expected_e2e"
+          test "$cli_revision" = "$ZED_CLI_SHA"
+          test "$interfaces_revision" = "$ZED_INTERFACES_SHA"
+          grep -F "rev = \"$ZED_INTERFACES_SHA\"" zed-cli/Cargo.toml
+          grep -F "rev = \"$FLAGS2ENV_SHA\"" zed-cli/Cargo.toml
+
+          {
+            printf 'e2e_commit=%s\n' "$e2e_revision"
+            printf 'zed_cli_commit=%s\n' "$cli_revision"
+            printf 'zed_interfaces_commit=%s\n' "$interfaces_revision"
+            printf 'flags2env_commit=%s\n' "$FLAGS2ENV_SHA"
+            printf 'runner_os=%s\n' '${{ runner.os }}'
+            printf 'runner_arch=%s\n' '${{ runner.arch }}'
+            printf 'rustc=%s\n' "$(rustc --version)"
+            printf 'cargo=%s\n' "$(cargo --version)"
+            printf 'python=%s\n' "$(python3 --version)"
+            printf 'bash=%s\n' "$(command -v bash)"
+            printf 'zsh=%s\n' "$(command -v zsh)"
+            if command -v fish >/dev/null 2>&1; then
+              printf 'fish=%s\n' "$(command -v fish)"
+            fi
+          } > "$ARTIFACT_DIR/environment.txt"
+
+      - name: Compile the exact Zed CLI candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build \
+            --locked \
+            --manifest-path zed-cli/Cargo.toml \
+            --bin zed
+          test -x zed-cli/target/debug/zed
+
+      - name: Run the independent environment acceptance suite
+        shell: bash
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/zed-develop/${{ runner.os }}
+        run: |
+          set -euo pipefail
+          arguments=(
+            --zed "$GITHUB_WORKSPACE/zed-cli/target/debug/zed"
+            --artifact-dir "$ARTIFACT_DIR"
+            --candidate-sha "$ZED_CLI_SHA"
+            --interfaces-sha "$ZED_INTERFACES_SHA"
+          )
+          if [[ "$RUNNER_OS" == 'Linux' ]]; then
+            arguments+=(--expect-fish)
+          fi
+          python3 zed-e2e/tests/cli/zed_develop_clean_room.py "${arguments[@]}"
+
+      - name: Prove source checkouts remained clean
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          for repository in zed-e2e zed-cli zed-interfaces; do
+            git -C "$repository" status --short
+            test -z "$(git -C "$repository" status --porcelain=v1 --untracked-files=all)"
+          done
+
+      - name: Upload non-secret acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zed-develop-clean-room-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/zed-develop/${{ runner.os }}/
+          if-no-files-found: error
+          retention-days: 7

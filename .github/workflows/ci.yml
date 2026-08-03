@@ -14,6 +14,12 @@ on:
 permissions:
   contents: read
 
+# Temporary dependency pin for the memory-backend certification PR. Keep this
+# PR draft until zed-api-server.rs#9 merges, then return the checkout to main so
+# nightly/default-branch compatibility remains the long-term contract.
+env:
+  ZED_E2E_API_REF: 6acb7df3bbbf9fd9115fdc8bc1cd6a7f72c9a23c
+
 concurrency:
   group: zed-e2e-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -56,6 +62,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-api-server.rs
+          ref: ${{ env.ZED_E2E_API_REF }}
           path: zed-api-server.rs
           persist-credentials: false
           show-progress: false
@@ -66,6 +73,13 @@ jobs:
           path: zed-web-server.rs
           persist-credentials: false
           show-progress: false
+
+      - name: Verify pinned memory-backend source
+        run: |
+          set -euo pipefail
+          test "$(git -C zed-api-server.rs rev-parse HEAD)" = "$ZED_E2E_API_REF"
+          grep -q 'StorageConfig::Memory' zed-api-server.rs/src/storage.rs
+          grep -q 'STORAGE_MEMORY_MAX_BYTES' zed-api-server.rs/src/config.rs
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
@@ -104,6 +118,8 @@ jobs:
           # Official pgvector 0.8.6 + Postgres 16 Bookworm, pinned to the
           # linux/amd64 manifest used by GitHub's ubuntu-24.04 runners.
           ZED_E2E_PG_IMAGE: pgvector/pgvector:0.8.6-pg16-bookworm@sha256:84a355869251af1a3379cfc9fa7b4dbf962c03f642a4bb7b339a203925071c43
+          ZED_E2E_STORAGE_BACKEND: memory
+          ZED_E2E_STORAGE_MEMORY_MAX_BYTES: "268435456"
         run: npm run e2e
 
       - name: Capture stack diagnostics

@@ -21,7 +21,7 @@ env:
   ZED_E2E_API_REF: main
   # Stacked acceptance dependency for zed-pkg/zed-cli#54. Replace with that
   # PR's merge commit (or main) before this draft is promoted to main.
-  ZED_E2E_CLI_REF: 7dbbf5b68ff3da295b9caf57d3601170585300a1
+  ZED_E2E_CLI_REF: 48b149a12892f381b1d0c7ac3a0a0cab54a3e57f
 
 concurrency:
   group: zed-e2e-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

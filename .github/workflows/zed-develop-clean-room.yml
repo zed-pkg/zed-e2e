@@ -28,6 +28,7 @@ env:
   ZED_INTERFACES_SHA: dc0e0a0620b9462817950b552d3d334a184b1cb1
   FLAGS2ENV_SHA: 2f62e40932a0fcb8b9bf1b4c84473e34fa3c51c7
   CARGO_TERM_COLOR: always
+  PYTHONDONTWRITEBYTECODE: '1'
 
 jobs:
   clean-room:
@@ -81,13 +82,21 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Audit the workflow policy
+      - name: Audit the workflow policy without mutating the checkout
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile \
-            zed-e2e/tests/cli/zed_develop_clean_room.py \
-            zed-e2e/tests/cli/test_zed_develop_clean_room_policy.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          for relative in (
+              "tests/cli/zed_develop_clean_room.py",
+              "tests/cli/test_zed_develop_clean_room_policy.py",
+          ):
+              path = Path("zed-e2e") / relative
+              source = path.read_text(encoding="utf-8")
+              compile(source, str(path), "exec")
+          PY
           python3 -m unittest -v zed-e2e/tests/cli/test_zed_develop_clean_room_policy.py
 
       - name: Install Linux shell fixtures

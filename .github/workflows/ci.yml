@@ -27,10 +27,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - name: Check out zed-e2e
+      - name: Check out exact reviewed zed-e2e commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-e2e
+          ref: ${{ github.sha }}
           path: zed-e2e
           persist-credentials: false
           show-progress: false

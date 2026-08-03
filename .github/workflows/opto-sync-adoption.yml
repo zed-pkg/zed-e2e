@@ -1,0 +1,97 @@
+name: opto-sync adoption certification
+
+on:
+  pull_request:
+    paths:
+      - 'opto-sync-adoption.json'
+      - 'tests/opto-sync/**'
+      - '.github/workflows/opto-sync-adoption.yml'
+  workflow_dispatch:
+    inputs:
+      run_live:
+        description: Run the release-blocking frozen-install certification
+        required: true
+        default: false
+        type: boolean
+      wrapper_ref:
+        description: zed-sync branch, tag, or commit to certify
+        required: true
+        default: agent/den-1386-opto-sync-zed-adapter
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ZED_CLI_SHA: c636fb8f6b08695c6b4fe94e2481f4d57270b2d7
+  ZED_INTERFACES_SHA: dc0e0a0620b9462817950b552d3d334a184b1cb1
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Validate the declared adoption matrix
+        run: python3 tests/opto-sync/adoption_contract.py
+
+  live-frozen-install:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_live }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Checkout zed-sync candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: zed-pkg/zed-sync
+          ref: ${{ inputs.wrapper_ref }}
+          path: wrapper
+          persist-credentials: false
+
+      - name: Checkout pinned Zed package-plane sources
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_SHA }}
+          path: .tools/zed-cli
+          persist-credentials: false
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: zed-pkg/zed-interfaces
+          ref: ${{ env.ZED_INTERFACES_SHA }}
+          path: .tools/zed-interfaces
+          persist-credentials: false
+
+      - name: Build the pinned Zed CLI
+        run: cargo build --locked --release --manifest-path .tools/zed-cli/Cargo.toml --bin zed
+
+      - name: Frozen-install the certified Opto-Sync package
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed="$GITHUB_WORKSPACE/.tools/zed-cli/target/release/zed"
+          (
+            cd wrapper
+            "$zed" install --frozen --install-mode copy
+          )
+
+      - name: Verify package provenance, native targets, and bootstrap independence
+        run: |
+          python3 tests/opto-sync/adoption_contract.py \
+            --wrapper wrapper \
+            --live \
+            --zed-cli .tools/zed-cli \
+            --zed-interfaces .tools/zed-interfaces
+          cargo metadata --locked --no-deps --format-version 1 \
+            --manifest-path .tools/zed-cli/Cargo.toml > /dev/null

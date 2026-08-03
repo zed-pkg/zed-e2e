@@ -11,10 +11,17 @@
     "package": "opto-sync/opto-sync-clients",
     "range": "^0.2.0"
   },
-  "collections": ["products", "orders"],
+  "collections": [
+    "organizations",
+    "packages",
+    "package_versions",
+    "release_channels",
+    "installations"
+  ],
   "persistence": {
     "web": ["indexeddb"],
     "mobile": ["sqlite"],
+    "desktop": ["sqlite"],
     "backend": ["postgres", "supabase"]
   },
   "writeStrategies": ["queuedOptimistic", "remoteConfirmed"],
@@ -31,7 +38,8 @@
   ],
   "domainGuards": [
     "Zed CLI and registry bootstrap remain independent of opto-sync",
+    "manifest parsing, lock parsing, registry resolution, artifact installation, publishing, and CLI bootstrap remain Zed-owned",
     "package tag, commit, artifact digest, and lock provenance are immutable",
-    "registry authorization and product package policy remain Zed-owned"
+    "registry authorization, organization, actor, tenant mapping, and product package policy remain Zed-owned"
   ]
 }

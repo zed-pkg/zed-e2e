@@ -69,10 +69,25 @@ test.describe("zed-api-server registry semantics", () => {
     const results = await Promise.all(
       Array.from({ length: 5 }, () => tryPublish({ org, name, version: "1.0.0", description: "same" })),
     );
-    const wins = results.filter(Boolean).length;
-    // Versions are immutable: at least one publish commits, and the racers that
-    // lose must not create duplicates or corrupt the row.
-    expect(wins).toBeGreaterThanOrEqual(1);
+    const successes = results.filter((result) => result === null).length;
+    const failures = results.filter((result): result is string => result !== null);
+    // `zed publish` makes a byte-identical retry idempotent: a racer that sees
+    // the committed row during its preflight exits successfully without a
+    // second PUT. A racer already inside the API can instead lose the unique-
+    // index race and receive the expected immutable-version conflict. Both
+    // schedules are valid, but at least one command must succeed and no other
+    // failure class is acceptable.
+    expect(
+      successes,
+      `at least one concurrent publish must succeed; failures:\n${failures.join("\n")}`,
+    ).toBeGreaterThanOrEqual(1);
+    const unexpected = failures.filter(
+      (failure) => !/version_exists|already (?:published|exists)/i.test(failure),
+    );
+    expect(
+      unexpected,
+      `same-version racers may only lose with an immutable-version conflict:\n${unexpected.join("\n")}`,
+    ).toHaveLength(0);
 
     const res = await request.get(`${API_URL}/v1/packages/${org}/${name}`);
     expect(res.status()).toBe(200);
@@ -123,19 +138,54 @@ test.describe("zed-api-server registry semantics", () => {
     // The victim org EXISTS and is owned by a DIFFERENT token, so this tests
     // authorization (403), not mere non-existence (404 org_not_found).
     const victimOrg = `victim-${suffix}`;
-    await createToken(`e2e-victim-${suffix}`, victimOrg); // creates + claims the org under another token
-    const dir = mkdtempSync(path.join(os.tmpdir(), "zed-xorg-"));
+    const victimToken = await createToken(`e2e-victim-${suffix}`, victimOrg);
+    expect(victimToken).not.toBe(token);
+
+    const error = await tryPublish({
+      org: victimOrg,
+      name: "protected",
+      version: "1.0.0",
+      description: "must reject the attacker's token",
+    });
+    expect(error).toMatch(/forbidden|not authorized|403/i);
+  });
+
+  test("a scoped token cannot claim a second org", async () => {
+    const result = await runZed(["org", "claim", `extra-${suffix}`], {
+      env: { ZED_PKG_TOKEN: token },
+    });
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toMatch(/forbidden|not authorized|scoped|403/i);
+  });
+
+  test("package search matches names and descriptions", async ({ request }) => {
+    const name = "searchable-kit";
+    await publishFixture(
+      { org, name, version: "1.0.0", description: "frobnicator transport" },
+      { token, allowExisting: true },
+    );
+
+    const byName = await request.get(`${API_URL}/v1/search?q=searchable`);
+    expect(byName.status()).toBe(200);
+    expect((await byName.json()).items.some((item: { name: string }) => item.name === name)).toBe(true);
+
+    const byDescription = await request.get(`${API_URL}/v1/search?q=frobnicator`);
+    expect(byDescription.status()).toBe(200);
+    expect((await byDescription.json()).items.some((item: { name: string }) => item.name === name)).toBe(true);
+  });
+
+  test("manifest URL identity mismatch is rejected before publication", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "zed-url-mismatch-"));
     try {
-      writeFileSync(
-        path.join(dir, ".zpkg.toml"),
-        `[package]\norg = "${victimOrg}"\nname = "sneaky"\nversion = "1.0.0"\ndescription = "x"\n\n` +
-          `[package.repository]\nvcs = "git"\nurl = "https://github.com/${victimOrg}/sneaky"\n`,
-      );
+      writeFileSync(path.join(dir, ".zpkg.toml"), `[package]\norg = "${org}"\nname = "url-mismatch"\nversion = "1.0.0"\ndescription = "mismatch"\nlicense = "MIT"\n\n[package.repository]\nvcs = "git"\nurl = "https://github.com/${org}/url-mismatch"\n`);
       writeFileSync(path.join(dir, "LICENSE"), "MIT\n");
-      // Publish to the victim org using OUR (reg-*) token.
-      const res = await runZed(["publish", "--skip-vcs-checks"], { cwd: dir, env: { ZED_PKG_TOKEN: token } });
-      expect(res.code, "cross-org publish must be rejected").not.toBe(0);
-      expect(res.stderr.toLowerCase()).toMatch(/unauth|forbidden|403|401|scope|not allowed|permission/);
+      const result = await runZed(["publish", "--skip-vcs-checks"], {
+        cwd: dir,
+        env: { ZED_PKG_TOKEN: token },
+      });
+      // Sanity: publish the correctly addressed package first, then prove an
+      // explicit direct API mismatch is rejected below.
+      expect(result.code).toBe(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

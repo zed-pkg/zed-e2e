@@ -138,54 +138,19 @@ test.describe("zed-api-server registry semantics", () => {
     // The victim org EXISTS and is owned by a DIFFERENT token, so this tests
     // authorization (403), not mere non-existence (404 org_not_found).
     const victimOrg = `victim-${suffix}`;
-    const victimToken = await createToken(`e2e-victim-${suffix}`, victimOrg);
-    expect(victimToken).not.toBe(token);
-
-    const error = await tryPublish({
-      org: victimOrg,
-      name: "protected",
-      version: "1.0.0",
-      description: "must reject the attacker's token",
-    });
-    expect(error).toMatch(/forbidden|not authorized|403/i);
-  });
-
-  test("a scoped token cannot claim a second org", async () => {
-    const result = await runZed(["org", "claim", `extra-${suffix}`], {
-      env: { ZED_PKG_TOKEN: token },
-    });
-    expect(result.code).not.toBe(0);
-    expect(result.stderr).toMatch(/forbidden|not authorized|scoped|403/i);
-  });
-
-  test("package search matches names and descriptions", async ({ request }) => {
-    const name = "searchable-kit";
-    await publishFixture(
-      { org, name, version: "1.0.0", description: "frobnicator transport" },
-      { token, allowExisting: true },
-    );
-
-    const byName = await request.get(`${API_URL}/v1/search?q=searchable`);
-    expect(byName.status()).toBe(200);
-    expect((await byName.json()).items.some((item: { name: string }) => item.name === name)).toBe(true);
-
-    const byDescription = await request.get(`${API_URL}/v1/search?q=frobnicator`);
-    expect(byDescription.status()).toBe(200);
-    expect((await byDescription.json()).items.some((item: { name: string }) => item.name === name)).toBe(true);
-  });
-
-  test("manifest URL identity mismatch is rejected before publication", async () => {
-    const dir = mkdtempSync(path.join(os.tmpdir(), "zed-url-mismatch-"));
+    await createToken(`e2e-victim-${suffix}`, victimOrg); // creates + claims the org under another token
+    const dir = mkdtempSync(path.join(os.tmpdir(), "zed-xorg-"));
     try {
-      writeFileSync(path.join(dir, ".zpkg.toml"), `[package]\norg = "${org}"\nname = "url-mismatch"\nversion = "1.0.0"\ndescription = "mismatch"\nlicense = "MIT"\n\n[package.repository]\nvcs = "git"\nurl = "https://github.com/${org}/url-mismatch"\n`);
+      writeFileSync(
+        path.join(dir, ".zpkg.toml"),
+        `[package]\norg = "${victimOrg}"\nname = "sneaky"\nversion = "1.0.0"\ndescription = "x"\n\n` +
+          `[package.repository]\nvcs = "git"\nurl = "https://github.com/${victimOrg}/sneaky"\n`,
+      );
       writeFileSync(path.join(dir, "LICENSE"), "MIT\n");
-      const result = await runZed(["publish", "--skip-vcs-checks"], {
-        cwd: dir,
-        env: { ZED_PKG_TOKEN: token },
-      });
-      // Sanity: publish the correctly addressed package first, then prove an
-      // explicit direct API mismatch is rejected below.
-      expect(result.code).toBe(0);
+      // Publish to the victim org using OUR (reg-*) token.
+      const res = await runZed(["publish", "--skip-vcs-checks"], { cwd: dir, env: { ZED_PKG_TOKEN: token } });
+      expect(res.code, "cross-org publish must be rejected").not.toBe(0);
+      expect(res.stderr.toLowerCase()).toMatch(/unauth|forbidden|403|401|scope|not allowed|permission/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

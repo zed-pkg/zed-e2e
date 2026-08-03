@@ -123,6 +123,11 @@ def validate_bootstrap(
 ) -> None:
     if not profile.get("bootstrapIndependent"):
         return
+    # Fast PR validation proves that bootstrap independence is required by the
+    # profile. The live job supplies both source trees and proves the dependency
+    # graph. Supplying only one tree is always an error.
+    if zed_cli is None and zed_interfaces is None:
+        return
     assert zed_cli is not None and zed_interfaces is not None
     for manifest_path in (zed_cli / "Cargo.toml", zed_interfaces / "Cargo.toml"):
         forbidden = {

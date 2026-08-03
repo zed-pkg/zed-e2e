@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - name: Check out exact reviewed zed-e2e commit
+      - name: Check out the exact PR integration commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-e2e
@@ -105,9 +105,12 @@ jobs:
           # Official pgvector 0.8.6 + Postgres 16 Bookworm, pinned to the
           # linux/amd64 manifest used by GitHub's ubuntu-24.04 runners.
           ZED_E2E_PG_IMAGE: pgvector/pgvector:0.8.6-pg16-bookworm@sha256:84a355869251af1a3379cfc9fa7b4dbf962c03f642a4bb7b339a203925071c43
-        run: npm run e2e
+        run: |
+          set -euo pipefail
+          mkdir -p test-results
+          npm run e2e 2>&1 | tee test-results/e2e.log
 
-      - name: Capture stack diagnostics
+      - name: Capture stack and generated-test diagnostics
         if: failure()
         run: |
           set +e
@@ -117,7 +120,15 @@ jobs:
             cp -a zed-e2e/.stack/. "$destination/"
           fi
           docker logs zed-e2e-postgres > "$destination/postgres.log" 2>&1 || true
-          for log in "$destination"/*.log; do
+          grep -RInF --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=target \
+            'goLive records an audit line' \
+            zed-e2e zed-cli zed-api-server.rs zed-web-server.rs \
+            > "$destination/generated-test-locations.txt" 2>&1 || true
+          grep -RInF --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=target \
+            'same target from concurrent callers' \
+            zed-e2e zed-cli zed-api-server.rs zed-web-server.rs \
+            >> "$destination/generated-test-locations.txt" 2>&1 || true
+          for log in zed-e2e/test-results/e2e.log "$destination"/*.log "$destination/generated-test-locations.txt"; do
             test -f "$log" || continue
             printf '\n===== %s =====\n' "$log"
             cat "$log"

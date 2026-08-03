@@ -13,7 +13,7 @@ test.describe("zed r2g server-backed certification", () => {
     const org = `r2g-${suffix}`;
     const name = "server-roundtrip";
     const version = "1.0.0";
-    const token = await createToken(`r2g-server-${suffix}`, "owner", org);
+    const token = await createToken(`r2g-server-${suffix}`, org, "owner");
     const project = mkdtempSync(path.join(tmpdir(), "zed-r2g-package-"));
     const r2gRoot = mkdtempSync(path.join(tmpdir(), "zed-r2g-workspaces-"));
 

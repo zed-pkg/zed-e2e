@@ -26,7 +26,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ZED_CLI_SHA: d60ee44ed889440e39a4ec42e60e8e8eb2a53c14
+  ZED_CLI_SHA: 9a37a6c358c3add91d88ea33afe6dad046d3689a
   ZED_INTERFACES_SHA: c2e049006453c26ca8ca291783f681fce75cb01f
   FLAGS2ENV_SHA: 2f62e40932a0fcb8b9bf1b4c84473e34fa3c51c7
   CARGO_TERM_COLOR: always

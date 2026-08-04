@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the Windows contract with native path and cmd.exe adapters."""
+"""Run the Windows contract with native path, PowerShell, and cmd adapters."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def path_key(path: Path) -> str:
 _original_run = contract.run
 
 
-def run_with_cmd_batch(
+def run_with_windows_adapters(
     command: Sequence[str | os.PathLike[str]],
     *,
     cwd: Path,
@@ -36,19 +36,17 @@ def run_with_cmd_batch(
     check: bool = True,
     timeout: int = 120,
 ):
-    """Use native batch statement boundaries for the cmd.exe assertion.
+    """Use native statement boundaries while preserving strict shell contracts.
 
-    A single inline command containing several ``if`` statements, ``&``
-    separators, quoted environment expansions, and ``exit /b`` is sensitive to
-    cmd.exe's whole-line expansion and ``/S`` quote normalization.  The public
-    behavior under test is managed-environment delivery and child exit
-    propagation, not that incidental one-line parser shape.
+    PowerShell compares the actual child location with the managed project root
+    after both have been resolved by ``Get-Item``.  This proves the child starts
+    at the selected root while tolerating equivalent Win32 display spellings.
 
-    The assertion batch performs the checks and returns 31.  A second launcher
-    batch calls it, captures ``ERRORLEVEL`` on the following statement, and
-    exits with that exact value.  The outer ``cmd.exe /C`` executes the launcher
-    directly, so the process status observed by Zed is the child contract's
-    status rather than the status of the ``CALL`` built-in.
+    cmd.exe uses temporary batch files because a single compound command with
+    several ``if`` statements, ``&`` separators, quoted environment expansion,
+    and ``exit /b`` is sensitive to whole-line expansion and ``/S`` quote
+    normalization.  The launcher captures and returns the assertion batch's
+    status on a separate native statement boundary.
     """
 
     parts = [os.fspath(part) for part in command]
@@ -66,12 +64,27 @@ def run_with_cmd_batch(
 
     shell_name = Path(parts[shell_index]).name.lower()
     script = parts[command_index]
+
+    if shell_name in {"pwsh.exe", "powershell.exe"} and "windows-pwsh-clean-room-ok" in script:
+        profile_env = contract.PROFILE_ENV
+        parts[command_index] = (
+            f"if (Test-Path Env:{profile_env}) {{ throw 'profile loaded' }}; "
+            "if ($env:ZED_DEV -ne '1') { throw 'managed environment missing' }; "
+            "$actual = (Get-Item -LiteralPath '.').FullName.TrimEnd('\\'); "
+            "$expected = (Get-Item -LiteralPath $env:ZED_DEV_PROJECT_ROOT).FullName.TrimEnd('\\'); "
+            "if (-not [String]::Equals($actual, $expected, "
+            "[StringComparison]::OrdinalIgnoreCase)) { "
+            "throw \"root mismatch: $actual != $expected\" }; "
+            "if (Test-Path Env:DOTENV_CANARY) { throw 'dotenv loaded' }; "
+            "Write-Output 'windows-pwsh-clean-room-ok'; exit 29"
+        )
+
     if shell_name == "cmd.exe" and "windows-cmd-clean-room-ok" in script:
         assertion_batch = cwd / "zed-develop-cmd-contract.cmd"
         assertion_batch.write_text(
             "@echo off\r\n"
             "if not \"%ZED_DEV%\"==\"1\" exit /b 41\r\n"
-            "if not exist \"%ZED_DEV_PROJECT_ROOT%\\package.json\" exit /b 42\r\n"
+            "if /I not \"%CD%\"==\"%ZED_DEV_PROJECT_ROOT%\" exit /b 42\r\n"
             "echo windows-cmd-clean-room-ok\r\n"
             "exit /b 31\r\n",
             encoding="utf-8",
@@ -85,10 +98,6 @@ def run_with_cmd_batch(
             "exit /b %zed_contract_exit%\r\n",
             encoding="utf-8",
         )
-
-        # Direct batch execution under `cmd.exe /D /S /C` preserves the
-        # launcher's `exit /b` status. Quoting protects temporary paths that may
-        # contain spaces on developer machines.
         parts[command_index] = f'"{launcher_batch}"'
 
     return _original_run(
@@ -101,5 +110,5 @@ def run_with_cmd_batch(
 
 
 contract.path_key = path_key
-contract.run = run_with_cmd_batch
+contract.run = run_with_windows_adapters
 raise SystemExit(contract.main())

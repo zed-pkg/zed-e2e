@@ -138,9 +138,12 @@ class WindowsCleanRoomWorkflowPolicyTests(unittest.TestCase):
         self.assertIn("-NoProfile", self.suite)
         self.assertIn("Scripts", self.suite)
 
-    def test_cmd_adapter_uses_relative_call_and_preserves_errorlevel(self) -> None:
-        self.assertIn("zed-develop-cmd-contract.cmd", self.runner)
-        self.assertIn("zed-develop-cmd-launcher.cmd", self.runner)
+    def test_cmd_adapter_uses_project_root_relative_call_and_errorlevel(self) -> None:
+        self.assertIn("def owning_project_root(caller: Path) -> Path:", self.runner)
+        self.assertIn('(candidate / "package.json").is_file()', self.runner)
+        self.assertIn("project_root = owning_project_root(cwd)", self.runner)
+        self.assertIn('project_root / "zed-develop-cmd-contract.cmd"', self.runner)
+        self.assertIn('project_root / "zed-develop-cmd-launcher.cmd"', self.runner)
         self.assertIn("call zed-develop-cmd-contract.cmd\\r\\n", self.runner)
         self.assertIn('set "zed_contract_exit=%errorlevel%"', self.runner)
         self.assertIn("exit /b %zed_contract_exit%", self.runner)
@@ -148,6 +151,8 @@ class WindowsCleanRoomWorkflowPolicyTests(unittest.TestCase):
             'parts[command_index] = "call zed-develop-cmd-launcher.cmd"',
             self.runner,
         )
+        self.assertNotIn("assertion_batch = cwd /", self.runner)
+        self.assertNotIn("launcher_batch = cwd /", self.runner)
         self.assertNotIn("call \"{assertion_batch}\"", self.runner)
         self.assertNotIn("call \"{launcher_batch}\"", self.runner)
         self.assertNotIn("parts[command_index] = f'\"{launcher_batch}\"'", self.runner)

@@ -114,13 +114,18 @@ jobs:
         working-directory: zed-e2e
         run: npm run typecheck
 
+      - name: Verify collision-safe stack allocation
+        working-directory: zed-e2e
+        run: node --test --test-reporter=spec scripts/allocate-stack-ports.test.mjs
+
       # Boot once, then make every framework an external-stack consumer. This
       # is both the intended shared-state model and the correct model for a
       # process-memory registry: restarting the API between frameworks would
-      # erase the packages under test. It also removes the Docker container-name
-      # race caused by independent framework teardowns and concurrent Node test
-      # files trying to recreate Postgres.
-      - name: Start one bounded memory-backed registry stack
+      # erase the packages under test. Before booting, reserve the preferred
+      # ports when they are free and select ephemeral alternatives otherwise;
+      # the resolved numeric ports and run-scoped container identity are
+      # persisted for later consumer and teardown steps.
+      - name: Start one collision-safe bounded memory-backed registry stack
         working-directory: zed-e2e
         env:
           # Official pgvector 0.8.6 + Postgres 16 Bookworm, pinned to the
@@ -128,14 +133,24 @@ jobs:
           ZED_E2E_PG_IMAGE: pgvector/pgvector:0.8.6-pg16-bookworm@sha256:84a355869251af1a3379cfc9fa7b4dbf962c03f642a4bb7b339a203925071c43
           ZED_E2E_STORAGE_BACKEND: memory
           ZED_E2E_STORAGE_MEMORY_MAX_BYTES: "268435456"
-        run: npm run stack:up
+        run: |
+          set -euo pipefail
+          node scripts/allocate-stack-ports.mjs --github-env "$GITHUB_ENV" -- npm run stack:up
+
+      - name: Report resolved stack identity
+        run: |
+          set -euo pipefail
+          printf 'run_id=%s\npg_port=%s\napi_port=%s\nweb_port=%s\ncontainer=%s\n' \
+            "$ZED_E2E_RUN_ID" "$ZED_E2E_PG_PORT" "$ZED_E2E_API_PORT" \
+            "$ZED_E2E_WEB_PORT" "$ZED_E2E_PG_CONTAINER"
 
       - name: Run e2e (Playwright, Puppeteer, Selenium)
         working-directory: zed-e2e
-        env:
-          ZED_E2E_API_URL: http://127.0.0.1:48080
-          ZED_E2E_WEB_URL: http://127.0.0.1:48081
-        run: npm run e2e
+        run: |
+          set -euo pipefail
+          ZED_E2E_API_URL="http://127.0.0.1:$ZED_E2E_API_PORT" \
+          ZED_E2E_WEB_URL="http://127.0.0.1:$ZED_E2E_WEB_PORT" \
+            npm run e2e
 
       - name: Prove package artifacts never touched disk
         working-directory: zed-e2e
@@ -157,7 +172,7 @@ jobs:
           if test -d zed-e2e/.stack; then
             cp -a zed-e2e/.stack/. "$destination/"
           fi
-          docker logs zed-e2e-postgres > "$destination/postgres.log" 2>&1 || true
+          docker logs "$ZED_E2E_PG_CONTAINER" > "$destination/postgres.log" 2>&1 || true
           for log in "$destination"/*.log; do
             test -f "$log" || continue
             printf '\n===== %s =====\n' "$log"

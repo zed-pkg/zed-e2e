@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ZED_CLI_SHA: dda12969da03ec1cfd05a4be0781f768fff2d743
+  ZED_CLI_SHA: dc0caaa60ea813184762729517897565ccf64961
   ZED_INTERFACES_SHA: c2e049006453c26ca8ca291783f681fce75cb01f
   FLAGS2ENV_SHA: 2f62e40932a0fcb8b9bf1b4c84473e34fa3c51c7
   CARGO_TERM_COLOR: always
@@ -83,7 +83,6 @@ jobs:
             'zed-e2e/tests/cli/test_zed_develop_windows_policy.py'
           )
           foreach ($path in $paths) {
-            $source = Get-Content -Raw $path
             python -c "compile(open(r'$path', encoding='utf-8').read(), r'$path', 'exec')"
           }
           python -m unittest -v zed-e2e/tests/cli/test_zed_develop_windows_policy.py

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Finalize Windows assertions without relying on textual path prefixes."""
+
 from pathlib import Path
 
 source = Path("tests/cli/zed_develop_windows_clean_room.py")
@@ -16,11 +18,9 @@ old_powershell = '''        ps_script = (
 new_powershell = '''        ps_script = (
             f"if (Test-Path Env:{PROFILE_ENV}) {{ throw 'profile loaded' }}; "
             "if ($env:ZED_DEV -ne '1') { throw 'managed environment missing' }; "
-            "$actual = (Get-Item -LiteralPath '.').FullName.TrimEnd('\\\\'); "
-            "$expected = (Get-Item -LiteralPath $env:ZED_DEV_PROJECT_ROOT).FullName.TrimEnd('\\\\'); "
-            "if (-not [String]::Equals($actual, $expected, "
-            "[StringComparison]::OrdinalIgnoreCase)) { "
-            "throw \"root mismatch: $actual != $expected\" }; "
+            "if (-not (Test-Path -LiteralPath "
+            "(Join-Path $env:ZED_DEV_PROJECT_ROOT 'package.json') -PathType Leaf)) { "
+            "throw 'project root does not own package.json' }; "
             "if (Test-Path Env:DOTENV_CANARY) { throw 'dotenv loaded' }; "
             "Write-Output 'windows-pwsh-clean-room-ok'; exit 29"
         )

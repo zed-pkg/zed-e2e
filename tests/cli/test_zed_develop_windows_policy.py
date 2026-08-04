@@ -138,12 +138,18 @@ class WindowsCleanRoomWorkflowPolicyTests(unittest.TestCase):
         self.assertIn("-NoProfile", self.suite)
         self.assertIn("Scripts", self.suite)
 
-    def test_cmd_adapter_uses_call_and_preserves_errorlevel(self) -> None:
+    def test_cmd_adapter_uses_relative_call_and_preserves_errorlevel(self) -> None:
         self.assertIn("zed-develop-cmd-contract.cmd", self.runner)
         self.assertIn("zed-develop-cmd-launcher.cmd", self.runner)
+        self.assertIn("call zed-develop-cmd-contract.cmd\\r\\n", self.runner)
         self.assertIn('set "zed_contract_exit=%errorlevel%"', self.runner)
         self.assertIn("exit /b %zed_contract_exit%", self.runner)
-        self.assertIn("parts[command_index] = f'call \"{launcher_batch}\"'", self.runner)
+        self.assertIn(
+            'parts[command_index] = "call zed-develop-cmd-launcher.cmd"',
+            self.runner,
+        )
+        self.assertNotIn("call \"{assertion_batch}\"", self.runner)
+        self.assertNotIn("call \"{launcher_batch}\"", self.runner)
         self.assertNotIn("parts[command_index] = f'\"{launcher_batch}\"'", self.runner)
 
     def test_every_declared_canary_is_checked_and_not_retained(self) -> None:

@@ -71,8 +71,16 @@ class WindowsCleanRoomWorkflowPolicyTests(unittest.TestCase):
                 self.assertRegex(revision, FULL_SHA)
         self.assertIn("ref: ${{ env.ZED_CLI_SHA }}", self.workflow)
         self.assertIn("ref: ${{ env.ZED_INTERFACES_SHA }}", self.workflow)
-        self.assertIn('rev = \\"$env:ZED_INTERFACES_SHA\\"', self.workflow)
-        self.assertIn('rev = \\"$env:FLAGS2ENV_SHA\\"', self.workflow)
+        self.assertIn(
+            "$expectedInterface = 'rev = \"' + $env:ZED_INTERFACES_SHA + '\"'",
+            self.workflow,
+        )
+        self.assertIn(
+            "$expectedFlags = 'rev = \"' + $env:FLAGS2ENV_SHA + '\"'",
+            self.workflow,
+        )
+        self.assertIn("$cargo.Contains($expectedInterface)", self.workflow)
+        self.assertIn("$cargo.Contains($expectedFlags)", self.workflow)
 
     def test_workflow_builds_the_real_locked_windows_candidate(self) -> None:
         self.assertIn("cargo build", self.workflow)

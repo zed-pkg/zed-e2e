@@ -10,6 +10,7 @@ browser frameworks plus the `zed` CLI drive it:
 | `suites/puppeteer` | Puppeteer + `node:test` | Web UI smoke + HTMX behaviors in raw Chromium |
 | `suites/selenium` | selenium-webdriver + `node:test` | Cross-driver UI verification (chromedriver) |
 | `suites/cluster-grid` | deployed k8s browser grid | Drives a live zed site through the AWS/Hetzner `dd-browser-test-server` under playwright/puppeteer/selenium — no local browser. Opt-in; see [docs/cluster-grid.md](docs/cluster-grid.md) |
+| `suites/cli/pack-publication-boundary.sh` | real `zed` CLI + Git + tar | Proves ignored secrets are rejected, explicit package exclusions prune them from archives, and the conservative no-Git runtime path remains safe |
 
 ## Prerequisites
 
@@ -39,7 +40,19 @@ npm run e2e:puppeteer
 npm run e2e:selenium
 ```
 
-Each suite boots (and tears down) the stack itself. To reuse one stack across suites:
+Run the focused package-publication boundary against a locally built CLI:
+
+```bash
+cargo build --locked --manifest-path ../zed-cli/Cargo.toml --bin zed
+ZED_BIN="$PWD/../zed-cli/target/debug/zed" \
+  bash suites/cli/pack-publication-boundary.sh
+```
+
+The focused suite creates isolated repositories and package state under a temporary directory. It
+checks the ordinary Git-backed path and a runtime with `git` deliberately absent from `PATH`, then
+opens each successful `tar.gz` artifact to prove `secret.env` was not published.
+
+Each browser suite boots (and tears down) the stack itself. To reuse one stack across suites:
 
 ```bash
 npm run stack:up        # boots postgres + api + web, prints URLs
@@ -67,7 +80,10 @@ without any commit landing here. So beyond push/PR, CI also runs:
 
 - **on demand** — `gh workflow run ci --repo zed-pkg/zed-e2e --ref main`, the
   right check after a sibling repo ships something the stack depends on;
-- **nightly** (07:17 UTC) — catches cross-repo drift nobody thought to verify.
+- **nightly** (07:17 UTC) — catches cross-repo drift nobody thought to verify;
+- **weekly publication-boundary contract** (Mondays at 07:17 UTC) — rebuilds
+  `zed-cli` from `main` and exercises both Git-backed and Git-less package
+  safety paths.
 
 A failure here with no zed-e2e commit behind it usually means version skew:
 a sibling's `main` changed under the suite.

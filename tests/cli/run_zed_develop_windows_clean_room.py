@@ -47,8 +47,10 @@ def run_with_windows_adapters(
     cmd.exe uses temporary batch files because a single compound command with
     several ``if`` statements, ``&`` separators, quoted environment expansion,
     and ``exit /b`` is sensitive to whole-line expansion and ``/S`` quote
-    normalization. The launcher captures and returns the assertion batch's
-    status on a separate native statement boundary.
+    normalization. The assertion batch returns the contract status; the launcher
+    captures it on the following statement and returns it unchanged. The outer
+    command uses cmd.exe's ``CALL`` form so the quoted path is parsed as a batch
+    filename instead of as literal command text.
     """
 
     parts = [os.fspath(part) for part in command]
@@ -100,7 +102,7 @@ def run_with_windows_adapters(
             "exit /b %zed_contract_exit%\r\n",
             encoding="utf-8",
         )
-        parts[command_index] = f'"{launcher_batch}"'
+        parts[command_index] = f'call "{launcher_batch}"'
 
     return _original_run(
         parts,

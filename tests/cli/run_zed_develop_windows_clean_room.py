@@ -25,6 +25,15 @@ def path_key(path: Path) -> str:
     return os.path.normcase(text)
 
 
+def owning_project_root(caller: Path) -> Path:
+    """Return the nearest ancestor that owns the fixture manifest."""
+
+    for candidate in (caller, *caller.parents):
+        if (candidate / "package.json").is_file():
+            return candidate
+    raise AssertionError(f"no package.json owner found above nested caller: {caller}")
+
+
 _original_run = contract.run
 
 
@@ -50,12 +59,12 @@ def run_with_windows_adapters(
     normalization. The assertion batch returns the contract status; the launcher
     captures it on the following statement and returns it unchanged.
 
-    Both files are created in the child working directory under runner-temporary
-    storage and have fixed names without spaces. The outer command therefore
-    invokes the launcher by relative name through ``CALL``. This avoids an
-    incidental inner absolute-path quoting layer while retaining the product
-    behavior under test: Zed's ``/D /S /C`` arguments, selected child cwd,
-    managed environment, and exact ``ERRORLEVEL`` propagation.
+    The files are written to the nearest manifest-owning project root—the exact
+    directory Zed must select as the child cwd. They use fixed names without
+    spaces, so the outer command can invoke the launcher by relative name through
+    ``CALL``. This avoids an incidental inner absolute-path quoting layer while
+    retaining the product behavior under test: Zed's ``/D /S /C`` arguments,
+    selected cwd, managed environment, and exact ``ERRORLEVEL`` propagation.
     """
 
     parts = [os.fspath(part) for part in command]
@@ -88,7 +97,8 @@ def run_with_windows_adapters(
         )
 
     if shell_name == "cmd.exe" and "windows-cmd-clean-room-ok" in script:
-        assertion_batch = cwd / "zed-develop-cmd-contract.cmd"
+        project_root = owning_project_root(cwd)
+        assertion_batch = project_root / "zed-develop-cmd-contract.cmd"
         assertion_batch.write_text(
             "@echo off\r\n"
             "if not \"%ZED_DEV%\"==\"1\" exit /b 41\r\n"
@@ -99,7 +109,7 @@ def run_with_windows_adapters(
             encoding="utf-8",
         )
 
-        launcher_batch = cwd / "zed-develop-cmd-launcher.cmd"
+        launcher_batch = project_root / "zed-develop-cmd-launcher.cmd"
         launcher_batch.write_text(
             "@echo off\r\n"
             "call zed-develop-cmd-contract.cmd\r\n"

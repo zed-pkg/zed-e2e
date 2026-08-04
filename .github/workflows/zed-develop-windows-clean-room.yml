@@ -5,12 +5,14 @@ name: zed develop Windows clean-room contract
     paths:
       - '.github/workflows/zed-develop-windows-clean-room.yml'
       - 'tests/cli/zed_develop_windows_clean_room.py'
+      - 'tests/cli/run_zed_develop_windows_clean_room.py'
       - 'tests/cli/test_zed_develop_windows_policy.py'
   push:
     branches: [main]
     paths:
       - '.github/workflows/zed-develop-windows-clean-room.yml'
       - 'tests/cli/zed_develop_windows_clean_room.py'
+      - 'tests/cli/run_zed_develop_windows_clean_room.py'
       - 'tests/cli/test_zed_develop_windows_policy.py'
   schedule:
     - cron: '41 8 * * 2'
@@ -24,7 +26,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ZED_CLI_SHA: 676163e80c2154aa973fd2528471f3c3dfd3ee61
+  ZED_CLI_SHA: f28abbd462195628f05e919fd6431963a320340e
   ZED_INTERFACES_SHA: c2e049006453c26ca8ca291783f681fce75cb01f
   FLAGS2ENV_SHA: 2f62e40932a0fcb8b9bf1b4c84473e34fa3c51c7
   CARGO_TERM_COLOR: always
@@ -80,6 +82,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $paths = @(
             'zed-e2e/tests/cli/zed_develop_windows_clean_room.py',
+            'zed-e2e/tests/cli/run_zed_develop_windows_clean_room.py',
             'zed-e2e/tests/cli/test_zed_develop_windows_policy.py'
           )
           foreach ($path in $paths) {
@@ -138,7 +141,7 @@ jobs:
           ARTIFACT_DIR: ${{ runner.temp }}\zed-develop-windows
         run: |
           $ErrorActionPreference = 'Stop'
-          python zed-e2e/tests/cli/zed_develop_windows_clean_room.py `
+          python zed-e2e/tests/cli/run_zed_develop_windows_clean_room.py `
             --zed "$env:GITHUB_WORKSPACE\zed-cli\target\debug\zed.exe" `
             --artifact-dir "$env:ARTIFACT_DIR" `
             --candidate-sha "$env:ZED_CLI_SHA" `

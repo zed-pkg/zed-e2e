@@ -38,14 +38,16 @@ def run_with_windows_adapters(
 ):
     """Use native statement boundaries while preserving strict shell contracts.
 
-    PowerShell compares the actual child location with the managed project root
-    after both have been resolved by ``Get-Item``.  This proves the child starts
-    at the selected root while tolerating equivalent Win32 display spellings.
+    The nested caller fixture has no manifest. Both child shells therefore prove
+    they started at the selected project root by finding ``package.json`` in
+    their own current directory and the nested fixture below it. This avoids
+    mistaking equivalent ordinary and ``\\?\\`` path spellings for different
+    directories.
 
     cmd.exe uses temporary batch files because a single compound command with
     several ``if`` statements, ``&`` separators, quoted environment expansion,
     and ``exit /b`` is sensitive to whole-line expansion and ``/S`` quote
-    normalization.  The launcher captures and returns the assertion batch's
+    normalization. The launcher captures and returns the assertion batch's
     status on a separate native statement boundary.
     """
 
@@ -70,11 +72,10 @@ def run_with_windows_adapters(
         parts[command_index] = (
             f"if (Test-Path Env:{profile_env}) {{ throw 'profile loaded' }}; "
             "if ($env:ZED_DEV -ne '1') { throw 'managed environment missing' }; "
-            "$actual = (Get-Item -LiteralPath '.').FullName.TrimEnd('\\'); "
-            "$expected = (Get-Item -LiteralPath $env:ZED_DEV_PROJECT_ROOT).FullName.TrimEnd('\\'); "
-            "if (-not [String]::Equals($actual, $expected, "
-            "[StringComparison]::OrdinalIgnoreCase)) { "
-            "throw \"root mismatch: $actual != $expected\" }; "
+            "if (-not (Test-Path -LiteralPath '.\\package.json' -PathType Leaf)) { "
+            "throw 'child cwd does not own package.json' }; "
+            "if (-not (Test-Path -LiteralPath '.\\src\\nested' -PathType Container)) { "
+            "throw 'child cwd is not the selected project root' }; "
             "if (Test-Path Env:DOTENV_CANARY) { throw 'dotenv loaded' }; "
             "Write-Output 'windows-pwsh-clean-room-ok'; exit 29"
         )
@@ -84,7 +85,8 @@ def run_with_windows_adapters(
         assertion_batch.write_text(
             "@echo off\r\n"
             "if not \"%ZED_DEV%\"==\"1\" exit /b 41\r\n"
-            "if /I not \"%CD%\"==\"%ZED_DEV_PROJECT_ROOT%\" exit /b 42\r\n"
+            "if not exist \".\\package.json\" exit /b 42\r\n"
+            "if not exist \".\\src\\nested\\\" exit /b 43\r\n"
             "echo windows-cmd-clean-room-ok\r\n"
             "exit /b 31\r\n",
             encoding="utf-8",

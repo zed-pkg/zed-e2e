@@ -48,9 +48,14 @@ def run_with_windows_adapters(
     several ``if`` statements, ``&`` separators, quoted environment expansion,
     and ``exit /b`` is sensitive to whole-line expansion and ``/S`` quote
     normalization. The assertion batch returns the contract status; the launcher
-    captures it on the following statement and returns it unchanged. The outer
-    command uses cmd.exe's ``CALL`` form so the quoted path is parsed as a batch
-    filename instead of as literal command text.
+    captures it on the following statement and returns it unchanged.
+
+    Both files are created in the child working directory under runner-temporary
+    storage and have fixed names without spaces. The outer command therefore
+    invokes the launcher by relative name through ``CALL``. This avoids an
+    incidental inner absolute-path quoting layer while retaining the product
+    behavior under test: Zed's ``/D /S /C`` arguments, selected child cwd,
+    managed environment, and exact ``ERRORLEVEL`` propagation.
     """
 
     parts = [os.fspath(part) for part in command]
@@ -97,12 +102,12 @@ def run_with_windows_adapters(
         launcher_batch = cwd / "zed-develop-cmd-launcher.cmd"
         launcher_batch.write_text(
             "@echo off\r\n"
-            f'call "{assertion_batch}"\r\n'
+            "call zed-develop-cmd-contract.cmd\r\n"
             'set "zed_contract_exit=%errorlevel%"\r\n'
             "exit /b %zed_contract_exit%\r\n",
             encoding="utf-8",
         )
-        parts[command_index] = f'call "{launcher_batch}"'
+        parts[command_index] = "call zed-develop-cmd-launcher.cmd"
 
     return _original_run(
         parts,

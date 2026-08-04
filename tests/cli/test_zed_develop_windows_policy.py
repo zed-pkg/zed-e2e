@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "zed-develop-windows-clean-room.yml"
 SUITE = ROOT / "tests" / "cli" / "zed_develop_windows_clean_room.py"
+RUNNER = ROOT / "tests" / "cli" / "run_zed_develop_windows_clean_room.py"
 POLICY = ROOT / "tests" / "cli" / "test_zed_develop_windows_policy.py"
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 USES = re.compile(r"(?m)^\s*uses:\s*([^\s@]+)@([^\s#]+)")
@@ -20,6 +21,7 @@ class WindowsCleanRoomWorkflowPolicyTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.workflow = WORKFLOW.read_text(encoding="utf-8")
         cls.suite = SUITE.read_text(encoding="utf-8")
+        cls.runner = RUNNER.read_text(encoding="utf-8")
 
     def test_review_main_schedule_and_manual_triggers_are_fail_closed(self) -> None:
         for required in (
@@ -88,6 +90,7 @@ class WindowsCleanRoomWorkflowPolicyTests(unittest.TestCase):
         self.assertIn("--bin zed", self.workflow)
         self.assertIn("target\\debug\\zed.exe", self.workflow)
         self.assertIn("zed_develop_windows_clean_room.py", self.workflow)
+        self.assertIn("run_zed_develop_windows_clean_room.py", self.workflow)
         self.assertIn("test_zed_develop_windows_policy.py", self.workflow)
 
     def test_source_cleanliness_is_proved_without_cleanup_masking(self) -> None:
@@ -134,6 +137,14 @@ class WindowsCleanRoomWorkflowPolicyTests(unittest.TestCase):
             self.assertIn(expected, self.suite)
         self.assertIn("-NoProfile", self.suite)
         self.assertIn("Scripts", self.suite)
+
+    def test_cmd_adapter_uses_call_and_preserves_errorlevel(self) -> None:
+        self.assertIn("zed-develop-cmd-contract.cmd", self.runner)
+        self.assertIn("zed-develop-cmd-launcher.cmd", self.runner)
+        self.assertIn('set "zed_contract_exit=%errorlevel%"', self.runner)
+        self.assertIn("exit /b %zed_contract_exit%", self.runner)
+        self.assertIn("parts[command_index] = f'call \"{launcher_batch}\"'", self.runner)
+        self.assertNotIn("parts[command_index] = f'\"{launcher_batch}\"'", self.runner)
 
     def test_every_declared_canary_is_checked_and_not_retained(self) -> None:
         for canary in (

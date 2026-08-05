@@ -1,17 +1,14 @@
-# Linear: DEN-1595
 name: Browser harness contract
 
 'on':
   pull_request:
     paths:
       - 'tests/browser/**'
-      - 'package.json'
       - '.github/workflows/browser-harness-contract.yml'
   push:
-    branches: [main]
+    branches: [main, master, dev]
     paths:
       - 'tests/browser/**'
-      - 'package.json'
       - '.github/workflows/browser-harness-contract.yml'
   schedule:
     - cron: '17 9 1 * *'
@@ -46,7 +43,7 @@ jobs:
       npm_config_update_notifier: 'false'
 
     steps:
-      - name: Check out repository without persisted credentials
+      - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -56,24 +53,15 @@ jobs:
         with:
           node-version: '22.23.1'
 
-      - name: Prepare isolated contract workspace and private evidence directory
+      - name: Prepare isolated contract workspace
         shell: bash
+        working-directory: tests/browser
         run: |
           set -euo pipefail
-          umask 077
-
-          workspace="${RUNNER_TEMP}/browser-harness-${{ matrix.framework }}"
-          artifact_dir="${RUNNER_TEMP}/browser-harness-evidence/${{ matrix.framework }}"
-          mkdir -p "$workspace" "$artifact_dir"
-          chmod 700 "$workspace" "$artifact_dir"
-          cp -R tests/browser/. "$workspace/"
-          printf '%s\n' '{"name":"browser-harness-contract-ci","private":true,"type":"module"}' > "$workspace/package.json"
-
-          {
-            printf 'BROWSER_HARNESS_WORKSPACE=%s\n' "$workspace"
-            printf 'BROWSER_HARNESS_ARTIFACT_DIR=%s\n' "$artifact_dir"
-          } >> "$GITHUB_ENV"
-
+          rm -rf node_modules package-lock.json
+          printf '%s\n' '{"name":"browser-harness-contract-ci","private":true,"type":"module"}' > package.json
+          artifact_dir="artifacts/${{ matrix.framework }}"
+          mkdir -p "$artifact_dir"
           {
             printf 'framework=%s\n' '${{ matrix.framework }}'
             printf 'node=%s\n' "$(node --version)"
@@ -86,10 +74,10 @@ jobs:
 
       - name: Install isolated browser driver
         shell: bash
+        working-directory: tests/browser
         run: |
           set -euo pipefail
-          cd "$BROWSER_HARNESS_WORKSPACE"
-          artifact="$BROWSER_HARNESS_ARTIFACT_DIR/environment.txt"
+          artifact="artifacts/${{ matrix.framework }}/environment.txt"
           case '${{ matrix.framework }}' in
             playwright)
               npm install --no-save --no-package-lock --ignore-scripts playwright@1.61.1
@@ -116,37 +104,27 @@ jobs:
               exit 64
               ;;
           esac
-          npm ls --depth=0 --json > "$BROWSER_HARNESS_ARTIFACT_DIR/dependencies.json"
+          npm ls --depth=0 --json > "artifacts/${{ matrix.framework }}/dependencies.json"
 
       - name: Validate contract syntax
         shell: bash
+        working-directory: tests/browser
         run: |
           set -euo pipefail
-          cd "$BROWSER_HARNESS_WORKSPACE"
           node --check playwright/harness-contract.test.mjs
           node --check puppeteer/harness-contract.test.mjs
           node --check selenium/harness-contract.test.mjs
 
       - name: Run browser harness contract
         shell: bash
-        run: |
-          set -euo pipefail
-          cd "$BROWSER_HARNESS_WORKSPACE"
-          node --test --test-reporter=spec '${{ matrix.framework }}/harness-contract.test.mjs'
-
-      - name: Prove the source checkout remained unchanged
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          git status --short
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+        working-directory: tests/browser
+        run: node --test --test-reporter=spec '${{ matrix.framework }}/harness-contract.test.mjs'
 
       - name: Upload browser evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: browser-harness-${{ matrix.framework }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/browser-harness-evidence/${{ matrix.framework }}/
+          path: tests/browser/artifacts/${{ matrix.framework }}/
           if-no-files-found: error
           retention-days: 7

@@ -11,6 +11,7 @@ browser frameworks plus the `zed` CLI drive it:
 | `suites/selenium` | selenium-webdriver + `node:test` | Cross-driver UI verification (chromedriver) |
 | `suites/cluster-grid` | deployed k8s browser grid | Drives a live zed site through the AWS/Hetzner `dd-browser-test-server` under playwright/puppeteer/selenium — no local browser. Opt-in; see [docs/cluster-grid.md](docs/cluster-grid.md) |
 | `suites/cli/pack-publication-boundary.sh` | real `zed` CLI + Git + tar | Proves ignored secrets are rejected, explicit package exclusions prune them from archives, and the conservative no-Git runtime path remains safe |
+| `suites/cli/pack-nested-publication-boundary.sh` | real `zed` CLI + nested Git repositories | Proves initialized submodule inputs, polyglot root legal-file copies, and tracked/clean bounded `.zedinclude` policies are enforced end to end |
 
 ## Prerequisites
 
@@ -40,17 +41,20 @@ npm run e2e:puppeteer
 npm run e2e:selenium
 ```
 
-Run the focused package-publication boundary against a locally built CLI:
+Run the focused package-publication boundaries against a locally built CLI:
 
 ```bash
 cargo build --locked --manifest-path ../zed-cli/Cargo.toml --bin zed
-ZED_BIN="$PWD/../zed-cli/target/debug/zed" \
-  bash suites/cli/pack-publication-boundary.sh
+export ZED_BIN="$PWD/../zed-cli/target/debug/zed"
+bash suites/cli/pack-publication-boundary.sh
+bash suites/cli/pack-nested-publication-boundary.sh
 ```
 
-The focused suite creates isolated repositories and package state under a temporary directory. It
-checks the ordinary Git-backed path and a runtime with `git` deliberately absent from `PATH`, then
-opens each successful `tar.gz` artifact to prove `secret.env` was not published.
+The focused suites create isolated repositories and package state under temporary directories. The
+primary suite checks the ordinary Git-backed path and a runtime with `git` deliberately absent from
+`PATH`, then opens each successful `tar.gz` artifact to prove `secret.env` was not published. The
+nested suite checks ignored files inside initialized submodules, root legal files copied into
+polyglot targets, and the review requirements and archive behavior of `.zedinclude`.
 
 Each browser suite boots (and tears down) the stack itself. To reuse one stack across suites:
 
@@ -82,8 +86,8 @@ without any commit landing here. So beyond push/PR, CI also runs:
   right check after a sibling repo ships something the stack depends on;
 - **nightly** (07:17 UTC) — catches cross-repo drift nobody thought to verify;
 - **weekly publication-boundary contract** (Mondays at 07:17 UTC) — rebuilds
-  `zed-cli` from `main` and exercises both Git-backed and Git-less package
-  safety paths.
+  `zed-cli` from `main` and exercises primary, nested-repository, polyglot
+  legal-file, generated-input, Git-backed, and Git-less package safety paths.
 
 A failure here with no zed-e2e commit behind it usually means version skew:
 a sibling's `main` changed under the suite.

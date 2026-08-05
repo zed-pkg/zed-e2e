@@ -11,7 +11,7 @@ ROOT="$(mktemp -d)"
 trap 'rm -rf "$ROOT"' EXIT
 export HOME="$ROOT/home"
 export ZED_PKG_HOME="$ROOT/zed-pkg-home"
-mkdir -p "$HOME" "$ZED_PKG_HOME" "$ROOT/no-git"
+mkdir -p "$HOME" "$ZED_PKG_HOME" "$ROOT/no-git" "$ROOT/logs"
 
 fail() {
   printf 'pack publication-boundary E2E failed: %s\n' "$*" >&2
@@ -88,8 +88,8 @@ expect_rejected() {
   local runtime="$2"
   local fixture
   fixture="$(init_fixture "$name" reject)"
-  local stdout="$fixture/pack.stdout"
-  local stderr="$fixture/pack.stderr"
+  local stdout="$ROOT/logs/$name.stdout"
+  local stderr="$ROOT/logs/$name.stderr"
 
   if run_pack "$fixture" "$runtime" "$stdout" "$stderr"; then
     cat "$stdout" >&2 || true
@@ -119,8 +119,8 @@ expect_allowed_and_pruned() {
   local runtime="$3"
   local fixture
   fixture="$(init_fixture "$name" "$policy")"
-  local stdout="$fixture/pack.stdout"
-  local stderr="$fixture/pack.stderr"
+  local stdout="$ROOT/logs/$name.stdout"
+  local stderr="$ROOT/logs/$name.stderr"
 
   if ! run_pack "$fixture" "$runtime" "$stdout" "$stderr"; then
     cat "$stdout" >&2 || true
@@ -132,7 +132,7 @@ expect_allowed_and_pruned() {
   archive="$(find "$fixture/.zed/pack" -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
   [[ -n "$archive" ]] || fail "$name did not produce a tar.gz artifact"
 
-  local listing="$fixture/archive.list"
+  local listing="$ROOT/logs/$name.archive.list"
   tar -tzf "$archive" >"$listing"
   grep -Fq 'pkg/payload.txt' "$listing" || {
     cat "$listing" >&2
@@ -142,6 +142,10 @@ expect_allowed_and_pruned() {
     cat "$listing" >&2
     fail "$name artifact contained secret.env"
   fi
+  if grep -Fq 'pkg/.git/' "$listing"; then
+    cat "$listing" >&2
+    fail "$name artifact contained nested Git metadata"
+  fi
 }
 
 expect_rejected 'ignored-secret-with-git' git
@@ -149,5 +153,6 @@ expect_rejected 'ignored-secret-without-git' gitless
 expect_allowed_and_pruned 'zedignore-exclusion' zedignore git
 expect_allowed_and_pruned 'manifest-exclusion' publish-exclude git
 expect_allowed_and_pruned 'zedignore-exclusion-without-git' zedignore gitless
+expect_allowed_and_pruned 'manifest-exclusion-without-git' publish-exclude gitless
 
 printf 'pack publication-boundary E2E passed\n'

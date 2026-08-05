@@ -35,11 +35,11 @@ jobs:
         with:
           path: zed-e2e
 
-      - name: Check out current zed-cli main
+      - name: Check out staged zed-cli head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: zed-pkg/zed-cli
-          ref: main
+          ref: eec38f0c6f54075e6a8d619a68657a32c63e33da
           path: zed-cli
 
       - name: Install stable Rust

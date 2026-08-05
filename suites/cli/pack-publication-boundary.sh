@@ -18,12 +18,9 @@ fail() {
   exit 1
 }
 
-init_fixture() {
-  local name="$1"
-  local policy="$2"
-  local fixture="$ROOT/$name"
-  mkdir -p "$fixture"
-
+write_manifest() {
+  local fixture="$1"
+  local name="$2"
   cat >"$fixture/.zpkg.toml" <<EOF
 [package]
 org = "zed-e2e"
@@ -34,7 +31,25 @@ version = "1.2.3"
 vcs = "git"
 url = "https://example.invalid/zed-e2e/$name.git"
 EOF
+}
 
+commit_fixture_baseline() {
+  local worktree="$1"
+  git -C "$worktree" init -q
+  git -C "$worktree" add -- .
+  git -C "$worktree" \
+    -c user.name='Zed E2E' \
+    -c user.email='zed-e2e@example.invalid' \
+    commit -qm 'fixture baseline'
+}
+
+init_fixture() {
+  local name="$1"
+  local policy="$2"
+  local fixture="$ROOT/$name"
+  mkdir -p "$fixture"
+
+  write_manifest "$fixture" "$name"
   printf 'secret.env\n' >"$fixture/.gitignore"
   printf 'safe payload for %s\n' "$name" >"$fixture/payload.txt"
   printf '# %s\n' "$name" >"$fixture/README.md"
@@ -57,15 +72,26 @@ EOF
       ;;
   esac
 
-  git -C "$fixture" init -q
-  git -C "$fixture" add -- .
-  git -C "$fixture" \
-    -c user.name='Zed E2E' \
-    -c user.email='zed-e2e@example.invalid' \
-    commit -qm 'fixture baseline'
+  commit_fixture_baseline "$fixture"
 
   # Create the ignored input only after the baseline commit so Git can prove it
   # is untracked. The value is synthetic and never a usable credential.
+  printf 'TOKEN=fixture-only-do-not-publish\n' >"$fixture/secret.env"
+  printf '%s\n' "$fixture"
+}
+
+init_nested_fixture() {
+  local name="$1"
+  local worktree="$ROOT/$name"
+  local fixture="$worktree/packages/client"
+  mkdir -p "$fixture"
+
+  write_manifest "$fixture" "$name"
+  printf 'packages/client/secret.env\n' >"$worktree/.gitignore"
+  printf 'safe nested payload\n' >"$fixture/payload.txt"
+  printf '# %s\n' "$name" >"$fixture/README.md"
+  commit_fixture_baseline "$worktree"
+
   printf 'TOKEN=fixture-only-do-not-publish\n' >"$fixture/secret.env"
   printf '%s\n' "$fixture"
 }
@@ -83,11 +109,10 @@ run_pack() {
   fi
 }
 
-expect_rejected() {
+assert_rejection() {
   local name="$1"
   local runtime="$2"
-  local fixture
-  fixture="$(init_fixture "$name" reject)"
+  local fixture="$3"
   local stdout="$ROOT/logs/$name.stdout"
   local stderr="$ROOT/logs/$name.stderr"
 
@@ -111,6 +136,21 @@ expect_rejected() {
       fail "$name did not report the conservative Git-less fallback"
     }
   fi
+}
+
+expect_rejected() {
+  local name="$1"
+  local runtime="$2"
+  local fixture
+  fixture="$(init_fixture "$name" reject)"
+  assert_rejection "$name" "$runtime" "$fixture"
+}
+
+expect_nested_root_ignore_rejected_without_git() {
+  local name='nested-root-ignore-without-git'
+  local fixture
+  fixture="$(init_nested_fixture "$name")"
+  assert_rejection "$name" gitless "$fixture"
 }
 
 expect_allowed_and_pruned() {
@@ -150,6 +190,7 @@ expect_allowed_and_pruned() {
 
 expect_rejected 'ignored-secret-with-git' git
 expect_rejected 'ignored-secret-without-git' gitless
+expect_nested_root_ignore_rejected_without_git
 expect_allowed_and_pruned 'zedignore-exclusion' zedignore git
 expect_allowed_and_pruned 'manifest-exclusion' publish-exclude git
 expect_allowed_and_pruned 'zedignore-exclusion-without-git' zedignore gitless

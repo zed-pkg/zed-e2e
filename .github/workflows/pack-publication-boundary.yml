@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/pack-publication-boundary.yml"
       - "suites/cli/pack-publication-boundary.sh"
+      - "suites/cli/pack-nested-publication-boundary.sh"
       - "README.md"
   push:
     branches:
@@ -12,6 +13,7 @@ on:
     paths:
       - ".github/workflows/pack-publication-boundary.yml"
       - "suites/cli/pack-publication-boundary.sh"
+      - "suites/cli/pack-nested-publication-boundary.sh"
       - "README.md"
   workflow_dispatch:
   schedule:
@@ -26,7 +28,7 @@ concurrency:
 
 jobs:
   contract:
-    name: Real CLI pack boundary
+    name: Real CLI pack boundaries
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -35,11 +37,11 @@ jobs:
         with:
           path: zed-e2e
 
-      - name: Check out current zed-cli main
+      - name: Check out staged zed-cli head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: zed-pkg/zed-cli
-          ref: main
+          ref: c4594a7ec893d2bcc0b06a9490ae80bba29254f4
           path: zed-cli
 
       - name: Install stable Rust
@@ -56,7 +58,12 @@ jobs:
         working-directory: zed-cli
         run: cargo build --locked --bin zed
 
-      - name: Verify the publication boundary
+      - name: Verify the primary publication boundary
         env:
           ZED_BIN: ${{ github.workspace }}/zed-cli/target/debug/zed
         run: bash zed-e2e/suites/cli/pack-publication-boundary.sh
+
+      - name: Verify nested and generated publication boundaries
+        env:
+          ZED_BIN: ${{ github.workspace }}/zed-cli/target/debug/zed
+        run: bash zed-e2e/suites/cli/pack-nested-publication-boundary.sh

@@ -39,7 +39,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: zed-pkg/zed-cli
-          ref: 48f2c25b3acbf0484c50c1c1bd4eedced1cb6674
+          ref: 537bb67b1c9368b488efe576aac506e277473ff6
           path: zed-cli
 
       - name: Install stable Rust

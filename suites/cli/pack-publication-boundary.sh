@@ -8,7 +8,17 @@ if [[ ! -x "$ZED_BIN" ]]; then
 fi
 
 ROOT="$(mktemp -d)"
-trap 'rm -rf "$ROOT"' EXIT
+ORIGINAL_UID="$(id -u)"
+ORIGINAL_GID="$(id -g)"
+
+cleanup() {
+  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    sudo -n chown -R "$ORIGINAL_UID:$ORIGINAL_GID" "$ROOT" >/dev/null 2>&1 || true
+  fi
+  rm -rf "$ROOT"
+}
+trap cleanup EXIT
+
 export HOME="$ROOT/home"
 export ZED_PKG_HOME="$ROOT/zed-pkg-home"
 mkdir -p "$HOME" "$ZED_PKG_HOME" "$ROOT/no-git" "$ROOT/logs"
@@ -153,6 +163,26 @@ expect_nested_root_ignore_rejected_without_git() {
   assert_rejection "$name" gitless "$fixture"
 }
 
+expect_nested_root_ignore_rejected_with_dubious_ownership() {
+  if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
+    printf 'skipping dubious-ownership contract: passwordless sudo unavailable\n'
+    return
+  fi
+
+  local name='nested-root-ignore-dubious-ownership'
+  local fixture
+  fixture="$(init_nested_fixture "$name")"
+  local worktree
+  worktree="$(cd "$fixture/../.." && pwd -P)"
+
+  # Git must trust the owning worktree root, not the nested package directory.
+  # A wrong safe.directory value produces Git's dubious-ownership error rather
+  # than the package guard's publication-boundary rejection.
+  sudo -n chown -R 12345:12345 "$worktree"
+  assert_rejection "$name" git "$fixture"
+  sudo -n chown -R "$ORIGINAL_UID:$ORIGINAL_GID" "$worktree"
+}
+
 expect_allowed_and_pruned() {
   local name="$1"
   local policy="$2"
@@ -191,6 +221,7 @@ expect_allowed_and_pruned() {
 expect_rejected 'ignored-secret-with-git' git
 expect_rejected 'ignored-secret-without-git' gitless
 expect_nested_root_ignore_rejected_without_git
+expect_nested_root_ignore_rejected_with_dubious_ownership
 expect_allowed_and_pruned 'zedignore-exclusion' zedignore git
 expect_allowed_and_pruned 'manifest-exclusion' publish-exclude git
 expect_allowed_and_pruned 'zedignore-exclusion-without-git' zedignore gitless

@@ -46,13 +46,20 @@ test("each language slice has its own page and install snippet", async () => {
   }
 });
 
-test("the whole-repository artifact coexists with the slices", async () => {
-  const response = await page.goto(`${WEB_URL}/p/${base.org}/${repositoryTarget}`, {
+test("the whole-repository artifact uses the canonical source identity", async () => {
+  const response = await page.goto(`${WEB_URL}/p/${base.org}/${base.name}`, {
     waitUntil: "networkidle0",
   });
   assert.equal(response?.status(), 200);
   const snippet = await page.$eval(".snippet", (el) => el.textContent ?? "");
-  assert.match(snippet, new RegExp(`zed add ${base.org}/${repositoryTarget}\\b`));
+  assert.match(snippet, new RegExp(`zed add ${base.org}/${base.name}\\b`));
+});
+
+test("the legacy root-target name is not published as an alias", async () => {
+  const response = await page.goto(`${WEB_URL}/p/${base.org}/${repositoryTarget}`, {
+    waitUntil: "networkidle0",
+  });
+  assert.equal(response?.status(), 404);
 });
 
 test("every slice reports the same lockstep version", async () => {

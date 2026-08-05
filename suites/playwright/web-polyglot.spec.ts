@@ -34,21 +34,23 @@ test.describe("polyglot fan-out in the registry UI", () => {
     }
   });
 
-  test("the whole-repository artifact is published alongside the slices", async ({ page }) => {
+  test("the whole-repository artifact uses the canonical source package identity", async ({
+    page,
+  }) => {
     // `[targets.repository] dir = "."` is the goal-2 surface: the entire repo
-    // as one package, coexisting with the isolated language packages rather
-    // than replacing them.
-    const response = await page.goto(`${WEB_URL}/p/${base.org}/${repositoryTarget}`);
+    // as one package, coexisting with the isolated language packages. A root
+    // target is deliberately canonicalized to the source manifest's org/name,
+    // even when an older manifest carries a target-level compatibility name.
+    const response = await page.goto(`${WEB_URL}/p/${base.org}/${base.name}`);
     expect(response?.status()).toBe(200);
-    await expect(page.locator(".snippet")).toContainText(`zed add ${base.org}/${repositoryTarget}`);
+    await expect(page.locator(".snippet")).toContainText(`zed add ${base.org}/${base.name}`);
   });
 
-  test("the polyglot source name is NOT itself a package", async ({ page }) => {
-    // `acme-clients` is the repository, not a published artifact: the fan-out
-    // publishes `acme-clients-<target>` and the explicit repository target.
-    // If the source name resolved, consumers could depend on a package whose
-    // contents are undefined.
-    const response = await page.goto(`${WEB_URL}/p/${base.org}/${base.name}`);
+  test("the legacy root-target name is not published as an alias", async ({ page }) => {
+    // Publishing both names would create two identities for the same source
+    // artifact and make dependency resolution ambiguous. The legacy name is
+    // accepted in the source manifest but canonicalized on the wire.
+    const response = await page.goto(`${WEB_URL}/p/${base.org}/${repositoryTarget}`);
     expect(response?.status()).toBe(404);
   });
 
@@ -59,7 +61,9 @@ test.describe("polyglot fan-out in the registry UI", () => {
       await page.goto(`${WEB_URL}/p/${base.org}/${name}`);
       const versions = page.locator("table.versions");
       await expect(versions, `${name} should list ${base.version}`).toContainText(base.version);
-      await expect(versions, `${name} should carry the repo tag`).toContainText(`tag v${base.version}`);
+      await expect(versions, `${name} should carry the repo tag`).toContainText(
+        `tag v${base.version}`,
+      );
     }
   });
 
@@ -70,7 +74,9 @@ test.describe("polyglot fan-out in the registry UI", () => {
     await page.fill("#q", base.name);
     const results = page.locator("#results");
     for (const name of languageNames) {
-      await expect(results, `search should surface ${name}`).toContainText(name, { timeout: 10_000 });
+      await expect(results, `search should surface ${name}`).toContainText(name, {
+        timeout: 10_000,
+      });
     }
   });
 
@@ -86,13 +92,28 @@ test.describe("polyglot fan-out in the registry UI", () => {
     }
   });
 
+  test("the canonical whole-repository package is independently resolvable", async ({
+    request,
+  }) => {
+    const res = await request.get(`${API_URL}/v1/packages/${base.org}/${base.name}`);
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.name).toBe(base.name);
+    expect(body.versions).toContain(base.version);
+
+    const legacy = await request.get(`${API_URL}/v1/packages/${base.org}/${repositoryTarget}`);
+    expect(legacy.status()).toBe(404);
+  });
+
   test("language packages are distinct artifacts, not aliases", async ({ request }) => {
     // The whole argument for publishing per language is that a consumer
     // downloads only their language's bytes. Identical digests would mean the
     // registry is serving one fat artifact under several names.
     const digests = new Map<string, string>();
     for (const name of languageNames) {
-      const res = await request.get(`${API_URL}/v1/packages/${base.org}/${name}/versions/${base.version}`);
+      const res = await request.get(
+        `${API_URL}/v1/packages/${base.org}/${name}/versions/${base.version}`,
+      );
       expect(res.status()).toBe(200);
       const body = await res.json();
       expect(body.sha256, `${name} should report a digest`).toBeTruthy();

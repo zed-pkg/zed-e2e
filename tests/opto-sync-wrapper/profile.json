@@ -1,30 +1,45 @@
 {
-  "schemaVersion": 1,
-  "repository": "zed-pkg/zed-e2e",
-  "syncRepository": "zed-pkg/zed-sync",
-  "syncRef": "agent/den-1386-opto-sync-zed-adapter",
-  "syncPullRequest": 4,
-  "rolloutIssue": "DEN-1386",
-  "releaseGates": ["DEN-309", "DEN-363"],
-  "releaseState": "blocked-until-certified-package-published",
-  "dependency": {
-    "package": "opto-sync/opto-sync-clients",
-    "range": "^0.2.0"
-  },
   "collections": [
     "organizations",
     "packages",
     "package_versions",
     "release_channels",
-    "installations"
+    "installations",
+    "products",
+    "orders"
+  ],
+  "dependency": {
+    "package": "opto-sync/opto-sync-clients",
+    "range": "^0.2.0"
+  },
+  "domainGuards": [
+    "Zed CLI and registry bootstrap remain independent of opto-sync",
+    "manifest parsing, lock parsing, registry resolution, artifact installation, publishing, and CLI bootstrap remain Zed-owned",
+    "package tag, commit, artifact digest, and lock provenance are immutable",
+    "registry authorization, organization, actor, tenant mapping, and product package policy remain Zed-owned",
+    "registry authorization and product package policy remain Zed-owned"
   ],
   "persistence": {
-    "web": ["indexeddb"],
-    "mobile": ["sqlite"],
-    "desktop": ["sqlite"],
-    "backend": ["postgres", "supabase"]
+    "backend": [
+      "postgres",
+      "supabase"
+    ],
+    "desktop": [
+      "sqlite"
+    ],
+    "mobile": [
+      "sqlite"
+    ],
+    "web": [
+      "indexeddb"
+    ]
   },
-  "writeStrategies": ["queuedOptimistic", "remoteConfirmed"],
+  "releaseGates": [
+    "DEN-309",
+    "DEN-363"
+  ],
+  "releaseState": "blocked-until-certified-package-published",
+  "repository": "zed-pkg/zed-e2e",
   "requiredScenarios": [
     "real-browser-indexeddb-wasm",
     "durable-restart",
@@ -36,10 +51,13 @@
     "postgres-supabase-authority",
     "realtime-is-wake-hint"
   ],
-  "domainGuards": [
-    "Zed CLI and registry bootstrap remain independent of opto-sync",
-    "manifest parsing, lock parsing, registry resolution, artifact installation, publishing, and CLI bootstrap remain Zed-owned",
-    "package tag, commit, artifact digest, and lock provenance are immutable",
-    "registry authorization, organization, actor, tenant mapping, and product package policy remain Zed-owned"
+  "rolloutIssue": "DEN-1386",
+  "schemaVersion": 1,
+  "syncPullRequest": 4,
+  "syncRef": "agent/den-1386-opto-sync-zed-adapter",
+  "syncRepository": "zed-pkg/zed-sync",
+  "writeStrategies": [
+    "queuedOptimistic",
+    "remoteConfirmed"
   ]
 }

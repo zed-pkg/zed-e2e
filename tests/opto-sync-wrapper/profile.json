@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "repository": "zed-pkg/zed-e2e",
+  "syncRepository": "zed-pkg/zed-sync",
+  "syncRef": "agent/den-1386-opto-sync-zed-adapter",
+  "syncPullRequest": 4,
+  "rolloutIssue": "DEN-1386",
+  "releaseGates": ["DEN-309", "DEN-363"],
+  "releaseState": "blocked-until-certified-package-published",
+  "dependency": {
+    "package": "opto-sync/opto-sync-clients",
+    "range": "^0.2.0"
+  },
+  "collections": ["products", "orders"],
+  "persistence": {
+    "web": ["indexeddb"],
+    "mobile": ["sqlite"],
+    "backend": ["postgres", "supabase"]
+  },
+  "writeStrategies": ["queuedOptimistic", "remoteConfirmed"],
+  "requiredScenarios": [
+    "real-browser-indexeddb-wasm",
+    "durable-restart",
+    "optimistic-rebase-no-flicker",
+    "remote-confirmed-no-premature-view",
+    "stable-mutation-id-replay",
+    "stale-base-conflict",
+    "tombstone-no-resurrection",
+    "postgres-supabase-authority",
+    "realtime-is-wake-hint"
+  ],
+  "domainGuards": [
+    "Zed CLI and registry bootstrap remain independent of opto-sync",
+    "package tag, commit, artifact digest, and lock provenance are immutable",
+    "registry authorization and product package policy remain Zed-owned"
+  ]
+}

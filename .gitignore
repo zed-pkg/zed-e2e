@@ -3,7 +3,3 @@ test-results/
 playwright-report/
 .stack/
 *.log
-tmp
-temp
-tmp/worktrees
-temp/worktrees

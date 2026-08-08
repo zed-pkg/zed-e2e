@@ -10,11 +10,8 @@
  *   ZED_E2E_API_URL / ZED_E2E_WEB_URL  -- point suites at an already-running
  *                                         stack instead of booting one.
  *   ZED_E2E_PG_IMAGE                  -- pgvector-enabled Postgres image.
- *   ZED_E2E_STORAGE_BACKEND           -- `local` (default), `memory`, or `s3`.
+ *   ZED_E2E_STORAGE_BACKEND           -- `local` (default) or `memory`.
  *   ZED_E2E_STORAGE_MEMORY_MAX_BYTES  -- bounded process-memory total.
- *   For `s3`, the caller's environment must carry S3_BUCKET (plus
- *   S3_ENDPOINT_URL/S3_REGION/S3_FORCE_PATH_STYLE and AWS credentials as
- *   needed); those pass through to the api-server unchanged.
  *   ZED_E2E_KEEP=1                    -- leave the stack up after the run.
  */
 import { execFile, spawn, type ChildProcess } from "node:child_process";
@@ -263,13 +260,10 @@ async function bootStack(artifactsDir: string): Promise<Stack> {
   await buildServers();
 
   const storageBackend = process.env.ZED_E2E_STORAGE_BACKEND ?? "local";
-  if (storageBackend !== "local" && storageBackend !== "memory" && storageBackend !== "s3") {
+  if (storageBackend !== "local" && storageBackend !== "memory") {
     throw new Error(
-      `ZED_E2E_STORAGE_BACKEND must be local, memory, or s3, got ${JSON.stringify(storageBackend)}`,
+      `ZED_E2E_STORAGE_BACKEND must be local or memory, got ${JSON.stringify(storageBackend)}`,
     );
-  }
-  if (storageBackend === "s3" && !process.env.S3_BUCKET) {
-    throw new Error("ZED_E2E_STORAGE_BACKEND=s3 requires S3_BUCKET in the environment");
   }
   const storageEnv: NodeJS.ProcessEnv = storageBackend === "memory"
     ? {
@@ -277,16 +271,10 @@ async function bootStack(artifactsDir: string): Promise<Stack> {
         STORAGE_MEMORY_MAX_BYTES:
           process.env.ZED_E2E_STORAGE_MEMORY_MAX_BYTES ?? "268435456",
       }
-    : storageBackend === "s3"
-      ? {
-          // S3_BUCKET/S3_ENDPOINT_URL/S3_REGION/S3_FORCE_PATH_STYLE and AWS
-          // credentials pass through from the caller's environment.
-          STORAGE_BACKEND: "s3",
-        }
-      : {
-          STORAGE_BACKEND: "local",
-          STORAGE_LOCAL_DIR: artifactsDir,
-        };
+    : {
+        STORAGE_BACKEND: "local",
+        STORAGE_LOCAL_DIR: artifactsDir,
+      };
 
   apiProc = spawnLogged("api", path.join(API_REPO, "target/debug/zed-api-server"), [], {
     DATABASE_URL,

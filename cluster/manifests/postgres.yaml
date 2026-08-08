@@ -46,9 +46,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: postgres
-          # Must provide the pgvector extension (the embeddings_and_tags
-          # migration needs it) — same image family the local harness boots.
-          image: pgvector/pgvector:0.8.6-pg16-bookworm
+          image: postgres:16-alpine
           imagePullPolicy: IfNotPresent
           ports:
             - name: pg

@@ -28,6 +28,11 @@ npm run cluster:down
 
 Prereqs on PATH: `docker`, `kind`, `kubectl`, `cargo` (+ `npm` for `cluster:e2e`).
 
+`cluster:up` rebuilds both `:dev` images from the current source checkout by
+default, while retaining Docker's layer cache. For a faster repeat run after
+verifying the source tree is unchanged, opt in explicitly with
+`ZED_E2E_REUSE_IMAGES=1 npm run cluster:up`.
+
 ## What gets deployed (`manifests/`, namespace `zed`)
 
 | Resource | Notes |

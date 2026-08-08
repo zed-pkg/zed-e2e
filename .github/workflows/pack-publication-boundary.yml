@@ -1,0 +1,69 @@
+name: Pack publication boundary
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/pack-publication-boundary.yml"
+      - "suites/cli/pack-publication-boundary.sh"
+      - "suites/cli/pack-nested-publication-boundary.sh"
+      - "README.md"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/pack-publication-boundary.yml"
+      - "suites/cli/pack-publication-boundary.sh"
+      - "suites/cli/pack-nested-publication-boundary.sh"
+      - "README.md"
+  workflow_dispatch:
+  schedule:
+    - cron: "17 7 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pack-publication-boundary-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Real CLI pack boundaries
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out zed-e2e
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: zed-e2e
+
+      - name: Check out current zed-cli main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: zed-pkg/zed-cli
+          ref: main
+          path: zed-cli
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: stable
+
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          workspaces: zed-cli -> target
+
+      - name: Build the real zed CLI
+        working-directory: zed-cli
+        run: cargo build --locked --bin zed
+
+      - name: Verify the primary publication boundary
+        env:
+          ZED_BIN: ${{ github.workspace }}/zed-cli/target/debug/zed
+        run: bash zed-e2e/suites/cli/pack-publication-boundary.sh
+
+      - name: Verify nested and generated publication boundaries
+        env:
+          ZED_BIN: ${{ github.workspace }}/zed-cli/target/debug/zed
+        run: bash zed-e2e/suites/cli/pack-nested-publication-boundary.sh

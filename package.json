@@ -6,10 +6,11 @@
   "type": "module",
   "scripts": {
     "e2e": "npm run e2e:playwright && npm run e2e:puppeteer && npm run e2e:selenium",
+    "e2e:auth": "playwright test suites/playwright/cli-auth.spec.ts",
     "test:harness": "tsx --test harness/*.test.ts",
     "e2e:playwright": "playwright test",
-    "e2e:puppeteer": "tsx --test suites/puppeteer/*.test.ts",
-    "e2e:selenium": "tsx --test suites/selenium/*.test.ts",
+    "e2e:puppeteer": "tsx --test --test-concurrency=1 suites/puppeteer/*.test.ts",
+    "e2e:selenium": "tsx --test --test-concurrency=1 suites/selenium/*.test.ts",
     "e2e:cluster-grid": "node --test suites/cluster-grid/*.test.mjs",
     "stack:up": "tsx harness/stack-cli.ts up",
     "stack:down": "tsx harness/stack-cli.ts down",

@@ -9,7 +9,13 @@
  * Environment overrides:
  *   ZED_E2E_API_URL / ZED_E2E_WEB_URL  -- point suites at an already-running
  *                                         stack instead of booting one.
- *   ZED_E2E_KEEP=1                     -- leave the stack up after the run.
+ *   ZED_E2E_PG_IMAGE                  -- pgvector-enabled Postgres image.
+ *   ZED_E2E_STORAGE_BACKEND           -- `local` (default), `memory`, or `s3`.
+ *   ZED_E2E_STORAGE_MEMORY_MAX_BYTES  -- bounded process-memory total.
+ *   For `s3`, the caller's environment must carry S3_BUCKET (plus
+ *   S3_ENDPOINT_URL/S3_REGION/S3_FORCE_PATH_STYLE and AWS credentials as
+ *   needed); those pass through to the api-server unchanged.
+ *   ZED_E2E_KEEP=1                    -- leave the stack up after the run.
  */
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
@@ -39,6 +45,8 @@ export const WEB_REPO = path.join(REPO_ROOT, "zed-web-server.rs");
 export const CLI_REPO = path.join(REPO_ROOT, "zed-cli");
 
 const PG_CONTAINER = process.env.ZED_E2E_PG_CONTAINER ?? "zed-e2e-postgres";
+const PG_IMAGE =
+  process.env.ZED_E2E_PG_IMAGE ?? "pgvector/pgvector:0.8.6-pg16-bookworm";
 
 /** Ports are overridable so a local run can coexist with an already-deployed
  *  stack — notably the `zed-e2e` kind cluster, whose NodePorts publish the API
@@ -121,24 +129,54 @@ async function startPostgres(): Promise<void> {
     "-e", "POSTGRES_PASSWORD=zed",
     "-e", "POSTGRES_DB=zed_e2e",
     "-p", `${PG_PORT}:5432`,
-    "postgres:16-alpine",
+    PG_IMAGE,
   ]);
   const deadline = Date.now() + 60_000;
+  let ready = false;
+  let lastReadinessError: unknown;
   while (Date.now() < deadline) {
     try {
-      // The alpine entrypoint runs a transient internal server during init, so
-      // `pg_isready` inside the container can pass before the host port is
-      // actually forwarding. Require BOTH: in-container readiness AND a
-      // host-side TCP connect to 127.0.0.1:PG_PORT, or the API server's
-      // no-retry `Database::connect` (5s) can lose the race and exit.
-      await sh("docker", ["exec", PG_CONTAINER, "pg_isready", "-U", "zed", "-d", "zed_e2e"]);
-      if (await portInUse(PG_PORT)) return;
-    } catch {
-      // not ready yet
+      // `pg_isready` only proves that a server accepts connections; it can
+      // return success while the official image's entrypoint is still creating
+      // POSTGRES_DB. Require a real query against the target database as well
+      // as the host-side TCP listener so migrations cannot race initialization.
+      const { stdout } = await sh("docker", [
+        "exec", PG_CONTAINER,
+        "psql", "-U", "zed", "-d", "zed_e2e",
+        "-v", "ON_ERROR_STOP=1", "-Atqc", "select 1",
+      ]);
+      if (stdout.trim() === "1" && await portInUse(PG_PORT)) {
+        ready = true;
+        break;
+      }
+    } catch (error) {
+      lastReadinessError = error;
     }
     await new Promise((r) => setTimeout(r, 400));
   }
-  throw new Error("postgres container did not become ready");
+  if (!ready) {
+    throw new Error(
+      `postgres container ${PG_CONTAINER} (${PG_IMAGE}) did not become query-ready: ${lastReadinessError}`,
+    );
+  }
+
+  // The API's migrations create the vector extension and an HNSW index. A
+  // plain postgres image starts successfully but then makes the API crash at
+  // migration time, which used to surface only as a one-minute health timeout.
+  // Verify the required extension before compiling or spawning either server.
+  const { stdout } = await sh("docker", [
+    "exec", PG_CONTAINER,
+    "psql", "-U", "zed", "-d", "zed_e2e",
+    "-v", "ON_ERROR_STOP=1", "-Atqc",
+    "select default_version from pg_available_extensions where name = 'vector'",
+  ]);
+  const vectorVersion = stdout.trim();
+  if (!vectorVersion) {
+    throw new Error(
+      `postgres image ${PG_IMAGE} does not provide the required pgvector extension`,
+    );
+  }
+  console.log(`postgres ready with pgvector ${vectorVersion} (${PG_IMAGE})`);
 }
 
 async function buildServers(): Promise<void> {
@@ -224,6 +262,23 @@ async function bootStack(artifactsDir: string): Promise<Stack> {
   await startPostgres();
   await buildServers();
 
+  const storageBackend = process.env.ZED_E2E_STORAGE_BACKEND ?? "local";
+  if (storageBackend !== "local" && storageBackend !== "memory") {
+    throw new Error(
+      `ZED_E2E_STORAGE_BACKEND must be local or memory, got ${JSON.stringify(storageBackend)}`,
+    );
+  }
+  const storageEnv: NodeJS.ProcessEnv = storageBackend === "memory"
+    ? {
+        STORAGE_BACKEND: "memory",
+        STORAGE_MEMORY_MAX_BYTES:
+          process.env.ZED_E2E_STORAGE_MEMORY_MAX_BYTES ?? "268435456",
+      }
+    : {
+        STORAGE_BACKEND: "local",
+        STORAGE_LOCAL_DIR: artifactsDir,
+      };
+
   apiProc = spawnLogged("api", path.join(API_REPO, "target/debug/zed-api-server"), [], {
     DATABASE_URL,
     BIND_ADDR: `127.0.0.1:${API_PORT}`,
@@ -231,8 +286,7 @@ async function bootStack(artifactsDir: string): Promise<Stack> {
     // artifact download_url in version metadata. The default localhost:8080
     // would send the CLI to the wrong port.
     PUBLIC_BASE_URL: API_URL,
-    STORAGE_BACKEND: "local",
-    STORAGE_LOCAL_DIR: artifactsDir,
+    ...storageEnv,
     RUST_LOG: "info",
   }, API_REPO);
 
@@ -254,10 +308,26 @@ async function bootStack(artifactsDir: string): Promise<Stack> {
  * Mint a publish token via the api server's `create-token` subcommand.
  * Scoped to `org` (also creates the org). The plaintext token is the last
  * non-empty line the command prints.
+ *
+ * `role` selects the RBAC role (`owner` | `publisher` | `reader`); the server
+ * defaults to `owner` when omitted, which is what most suites want.
  */
-export async function createToken(name: string, org: string): Promise<string> {
+export async function createToken(name: string, org: string, role?: string): Promise<string> {
+  return mintToken(["create-token", "--name", name, "--org", org, ...(role ? ["--role", role] : [])]);
+}
+
+/**
+ * Mint an **unscoped admin** token (no `--org`): owner-equivalent in every
+ * org. Needed to exercise cross-org operations such as claiming a fresh
+ * namespace and then reading that namespace's audit log.
+ */
+export async function createAdminToken(name: string): Promise<string> {
+  return mintToken(["create-token", "--name", name]);
+}
+
+async function mintToken(args: string[]): Promise<string> {
   const bin = path.join(API_REPO, "target/debug/zed-api-server");
-  const { stdout } = await sh(bin, ["create-token", "--name", name, "--org", org], {
+  const { stdout } = await sh(bin, args, {
     env: { DATABASE_URL },
   });
   const lines = stdout.trim().split("\n").filter(Boolean);

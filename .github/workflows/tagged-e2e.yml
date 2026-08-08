@@ -1,0 +1,128 @@
+name: tagged-e2e
+
+on:
+  # Create a tag in this repository matching the zed-cli release tag. The CLI
+  # checkout is immutable, while main stays uncluttered by test-trigger commits.
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      zed_cli_ref:
+        description: "zed-cli tag or SHA (tags preferred)"
+        required: true
+        default: "66009989605607e503a8061206c08db06ebd51f0"
+      flags_2_env_ref:
+        description: "flags-2-env tag or SHA"
+        required: true
+        default: "682bfddaa43fcab839b045875ef5dfcfc721d343"
+      zed_interfaces_ref:
+        description: "zed-interfaces tag, SHA, or branch"
+        required: true
+        default: "625ba7bdf4339df7d0880f791a0715ca894558fe"
+      zed_api_ref:
+        description: "zed-api-server.rs tag, SHA, or branch"
+        required: true
+        default: "3d2d4c98024e5bf718dc79c2648bd10d7759a31c"
+      zed_web_ref:
+        description: "zed-web-server.rs tag, SHA, or branch"
+        required: true
+        default: "b669850d317ebc07a8960aea4014706c55ffad22"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tagged-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: zed-e2e
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-interfaces
+          ref: ${{ inputs.zed_interfaces_ref || '625ba7bdf4339df7d0880f791a0715ca894558fe' }}
+          path: zed-interfaces
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-cli
+          # A pushed v* tag in zed-e2e is expected to match a zed-cli tag.
+          ref: ${{ inputs.zed_cli_ref || github.ref_name }}
+          path: zed-cli
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-api-server.rs
+          ref: ${{ inputs.zed_api_ref || '3d2d4c98024e5bf718dc79c2648bd10d7759a31c' }}
+          path: zed-api-server.rs
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-web-server.rs
+          ref: ${{ inputs.zed_web_ref || 'b669850d317ebc07a8960aea4014706c55ffad22' }}
+          path: zed-web-server.rs
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ORESoftware/flags-2-env
+          ref: ${{ inputs.flags_2_env_ref || '682bfddaa43fcab839b045875ef5dfcfc721d343' }}
+          path: flags-2-env
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          workspaces: |
+            zed-cli
+            zed-api-server.rs
+            zed-web-server.rs
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+
+      - name: Build flags-2-env native parser
+        working-directory: flags-2-env
+        run: make all
+
+      - name: Expose native parser to zed
+        run: echo "LD_LIBRARY_PATH=$GITHUB_WORKSPACE/flags-2-env/build" >> "$GITHUB_ENV"
+
+      - name: Install e2e dependencies
+        working-directory: zed-e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Typecheck and harness tests
+        working-directory: zed-e2e
+        run: |
+          npm run typecheck
+          npm run test:harness
+
+      - name: Audit zed flags contract
+        run: flags-2-env/build/flags2env audit zed-cli/.cli-flags.toml
+
+      - name: Run full end-to-end matrix
+        working-directory: zed-e2e
+        run: npm run e2e
+
+      - name: Pack flags-2-env as a zed package
+        working-directory: flags-2-env
+        run: ../zed-cli/target/debug/zed pack --out "$RUNNER_TEMP/flags-2-env-zpkg"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: tagged-e2e-debug-${{ github.run_id }}
+          path: |
+            zed-e2e/playwright-report
+            zed-e2e/.stack/*.log
+          if-no-files-found: ignore
+          retention-days: 7

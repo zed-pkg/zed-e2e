@@ -1,0 +1,84 @@
+name: Stack port allocation
+
+'on':
+  pull_request:
+    paths:
+      - '.github/workflows/stack-port-allocation.yml'
+      - '.github/workflows/ci.yml'
+      - 'scripts/allocate-stack-ports.mjs'
+      - 'scripts/allocate-stack-ports.test.mjs'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/stack-port-allocation.yml'
+      - '.github/workflows/ci.yml'
+      - 'scripts/allocate-stack-ports.mjs'
+      - 'scripts/allocate-stack-ports.test.mjs'
+  schedule:
+    - cron: '43 8 * * 4'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stack-port-allocation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  allocation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Check allocator syntax and unit contracts
+        run: |
+          set -euo pipefail
+          node --check scripts/allocate-stack-ports.mjs
+          node --check scripts/allocate-stack-ports.test.mjs
+          node --test --test-reporter=spec scripts/allocate-stack-ports.test.mjs
+
+      - name: Prove occupied defaults are replaced for an executed child
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          env_file="$tmp/github-env"
+          node - "$tmp/holders.json" <<'NODE' &
+          const fs = require('node:fs');
+          const net = require('node:net');
+          const output = process.argv[2];
+          const ports = [55432, 48080, 48081];
+          const servers = ports.map((port) => net.createServer().listen(port, '127.0.0.1'));
+          Promise.all(servers.map((server) => new Promise((resolve, reject) => {
+            server.once('listening', resolve);
+            server.once('error', reject);
+          }))).then(() => {
+            fs.writeFileSync(output, JSON.stringify(ports));
+            process.on('SIGTERM', () => Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve)))).then(() => process.exit(0)));
+          }).catch((error) => { console.error(error); process.exit(1); });
+          setInterval(() => {}, 1000);
+          NODE
+          holder_pid=$!
+          trap 'kill "$holder_pid" 2>/dev/null || true; wait "$holder_pid" 2>/dev/null || true; rm -rf "$tmp"' EXIT
+          for _ in $(seq 1 50); do test -s "$tmp/holders.json" && break; sleep 0.1; done
+          test -s "$tmp/holders.json"
+
+          node scripts/allocate-stack-ports.mjs --github-env "$env_file" -- \
+            node -e 'const occupied=new Set([55432,48080,48081]); for (const key of ["ZED_E2E_PG_PORT","ZED_E2E_API_PORT","ZED_E2E_WEB_PORT"]) { const value=Number(process.env[key]); if (!Number.isInteger(value) || occupied.has(value)) throw new Error(`${key} was not reallocated: ${value}`); } if (!process.env.ZED_E2E_PG_CONTAINER?.startsWith("zed-e2e-postgres-")) throw new Error("missing run-scoped container");'
+
+          grep -q '^ZED_E2E_PG_PORT=' "$env_file"
+          grep -q '^ZED_E2E_API_PORT=' "$env_file"
+          grep -q '^ZED_E2E_WEB_PORT=' "$env_file"
+          grep -q '^ZED_E2E_PG_CONTAINER=zed-e2e-postgres-' "$env_file"
+          if grep -q '^ZED_E2E_API_URL=' "$env_file" || grep -q '^ZED_E2E_WEB_URL=' "$env_file"; then
+            echo 'allocator persisted external-stack URLs and would break teardown ownership' >&2
+            exit 1
+          fi

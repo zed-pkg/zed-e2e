@@ -6,8 +6,8 @@ import { runZed, createToken } from "../../harness/stack.js";
 
 // CLI verbs not covered by cli-lifecycle (publish/install/yank/find) or
 // cli-advanced (semver ranges, add/remove, --frozen, pack): scaffolding a new
-// project with `init` and persisting a token with `login`.
-test.describe("zed CLI: init + login", () => {
+// project with `init` and importing a legacy opaque registry token.
+test.describe("zed CLI: init + legacy token import", () => {
   const suffix = Date.now().toString(36);
   const org = `cli3-${suffix}`;
   let token = "";
@@ -33,13 +33,15 @@ test.describe("zed CLI: init + login", () => {
     }
   });
 
-  test("login saves a token that later publishes without ZED_PKG_TOKEN in the environment", async () => {
+  test("auth import-token saves a token that later publishes without ZED_PKG_TOKEN", async () => {
     const home = mkdtempSync(path.join(os.tmpdir(), "zed-login-home-"));
     try {
-      // `zed login` reads the token from ZED_PKG_TOKEN and persists it to
-      // credentials.toml under this isolated home.
-      const login = await runZed(["login"], { env: { ZED_PKG_HOME: home, ZED_PKG_TOKEN: token } });
-      expect(login.code, login.stderr).toBe(0);
+      // Human `zed login` now uses shared-auth/Supabase. The explicit import
+      // command preserves compatibility with registry-issued opaque tokens.
+      const imported = await runZed(["auth", "import-token"], {
+        env: { ZED_PKG_HOME: home, ZED_PKG_TOKEN: token },
+      });
+      expect(imported.code, imported.stderr).toBe(0);
       expect(existsSync(path.join(home, "credentials.toml"))).toBeTruthy();
 
       // Now publish WITHOUT the token in the env — it must come from saved creds.

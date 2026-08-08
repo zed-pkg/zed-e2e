@@ -1,0 +1,254 @@
+name: live opto-sync zed cloud
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/live-opto-sync-cloud.yml'
+      - 'docs/live-opto-sync-cloud.md'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/live-opto-sync-cloud.yml'
+      - 'docs/live-opto-sync-cloud.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  ZED_CLI_REF: c636fb8f6b08695c6b4fe94e2481f4d57270b2d7
+  ZED_INTERFACES_REF: 415e871b1fb3dd97744c134351408a3224805dfb
+  SYNCER_REF: 7795ce2d1342e17d934d2faafff5c8ed4322609e
+  CLIENTS_REF: 54874e9f7df6009fccd9034fce39306daef2c043
+  OPTO_E2E_REF: 1d47bd46cf3785416295daf6af84afb8053f1cfd
+
+jobs:
+  dependency-contract:
+    name: pinned package dependency contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout syncer.c
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: opto-sync/syncer.c
+          ref: ${{ env.SYNCER_REF }}
+          path: syncer.c
+          persist-credentials: false
+
+      - name: Checkout clients and nested syncer.c
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: opto-sync/opto-sync-clients
+          ref: ${{ env.CLIENTS_REF }}
+          path: opto-sync-clients
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Checkout E2E package
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: opto-sync/opto-sync-e2e
+          ref: ${{ env.OPTO_E2E_REF }}
+          path: opto-sync-e2e
+          persist-credentials: false
+
+      - name: Prove versions, dependencies, and nested engine parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          syncer = tomllib.loads(Path('syncer.c/.zpkg.toml').read_text())
+          clients = tomllib.loads(Path('opto-sync-clients/.zpkg.toml').read_text())
+          e2e = tomllib.loads(Path('opto-sync-e2e/.zpkg.toml').read_text())
+
+          assert syncer['package']['org'] == 'opto-sync'
+          assert syncer['package']['name'] == 'syncer-packages'
+          assert syncer['package']['version'] == '0.2.1'
+          assert syncer['targets']['repository']['name'] == 'syncer'
+          assert syncer['targets']['repository']['dir'] == '.'
+          assert clients['package']['name'] == 'opto-sync-clients'
+          assert clients['package']['version'] == '0.2.0'
+          assert clients.get('dependencies', {}) == {}
+          assert e2e['package']['name'] == 'opto-sync-e2e'
+          assert e2e['package']['version'] == '0.1.0'
+          assert e2e['dependencies']['opto-sync/syncer'] == '^0.2.1'
+          assert e2e['dependencies']['opto-sync/opto-sync-clients'] == '^0.2.0'
+          PY
+          sibling="$(git -C syncer.c rev-parse HEAD)"
+          gitlink="$(git -C opto-sync-clients rev-parse HEAD:syncer.c)"
+          nested="$(git -C opto-sync-clients/syncer.c rev-parse HEAD)"
+          test "$sibling" = "$gitlink"
+          test "$nested" = "$gitlink"
+
+  live-roundtrip:
+    name: ${{ matrix.cloud }} public publish → install → frozen reinstall
+    needs: dependency-contract
+    if: github.event_name == 'workflow_dispatch' && needs.dependency-contract.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cloud: aws
+            registry: https://registry.aws.zpkg.tech
+          - cloud: hetzner
+            registry: https://registry.hetzner.zpkg.tech
+    concurrency:
+      group: live-zed-${{ matrix.cloud }}
+      cancel-in-progress: false
+    env:
+      ZED_PKG_REGISTRY: ${{ matrix.registry }}
+      ZED_PKG_HOME: ${{ github.workspace }}/.zed-home-${{ matrix.cloud }}
+      ZED_PKG_TOKEN: bootstrap-opto-sync-e2e
+    steps:
+      - name: Checkout zed CLI
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_REF }}
+          path: zed-cli
+          persist-credentials: false
+
+      - name: Checkout shared interfaces
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-interfaces
+          ref: ${{ env.ZED_INTERFACES_REF }}
+          path: zed-interfaces
+          persist-credentials: false
+
+      - name: Checkout syncer.c
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: opto-sync/syncer.c
+          ref: ${{ env.SYNCER_REF }}
+          path: syncer.c
+          persist-credentials: false
+
+      - name: Checkout clients and nested core
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: opto-sync/opto-sync-clients
+          ref: ${{ env.CLIENTS_REF }}
+          path: opto-sync-clients
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Checkout opto-sync E2E package
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: opto-sync/opto-sync-e2e
+          ref: ${{ env.OPTO_E2E_REF }}
+          path: opto-sync-e2e
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          workspaces: zed-cli
+
+      - name: Build the pinned CLI
+        working-directory: zed-cli
+        run: cargo build --release --locked
+
+      - name: Wait for the public registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 30 --retry-delay 5 --retry-all-errors \
+            "$ZED_PKG_REGISTRY/healthz"
+
+      - name: Publish the dependency graph in topological order
+        shell: bash
+        env:
+          ZED: ${{ github.workspace }}/zed-cli/target/release/zed
+        run: |
+          set -euo pipefail
+          for package in syncer.c opto-sync-clients opto-sync-e2e; do
+            echo "== publish ${package} to $ZED_PKG_REGISTRY =="
+            (cd "$package" && "$ZED" publish --allow-dirty --skip-vcs-checks)
+          done
+
+      - name: Verify live package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS "$ZED_PKG_REGISTRY/v1/packages/opto-sync/syncer/versions/0.2.1" > /tmp/syncer.json
+          curl -fsS "$ZED_PKG_REGISTRY/v1/packages/opto-sync/opto-sync-clients/versions/0.2.0" > /tmp/clients.json
+          curl -fsS "$ZED_PKG_REGISTRY/v1/packages/opto-sync/opto-sync-e2e/versions/0.1.0" > /tmp/e2e.json
+          python3 - <<'PY'
+          import json
+          for path, name, version in [
+              ('/tmp/syncer.json', 'syncer', '0.2.1'),
+              ('/tmp/clients.json', 'opto-sync-clients', '0.2.0'),
+              ('/tmp/e2e.json', 'opto-sync-e2e', '0.1.0'),
+          ]:
+              value = json.load(open(path))
+              assert value['org'] == 'opto-sync'
+              assert value['name'] == name
+              assert value['version'] == version
+              assert len(value['sha256']) == 64
+          PY
+
+      - name: Install only the top-level package in a blank consumer
+        shell: bash
+        env:
+          ZED: ${{ github.workspace }}/zed-cli/target/release/zed
+        run: |
+          set -euo pipefail
+          mkdir consumer
+          cat > consumer/.zpkg.toml <<'TOML'
+          [package]
+          org = "zed-cloud-smoke"
+          name = "opto-sync-consumer"
+          version = "0.0.0"
+          description = "Live transitive installation smoke test"
+          license = "MIT"
+
+          [package.repository]
+          vcs = "git"
+          url = "https://github.com/zed-pkg/zed-e2e"
+
+          [dependencies]
+          "opto-sync/opto-sync-e2e" = "^0.1.0"
+          TOML
+          (cd consumer && "$ZED" install --install-mode copy)
+          test -f consumer/zed_modules/opto-sync/opto-sync-e2e/.zpkg.toml
+          test -f consumer/zed_modules/opto-sync/opto-sync-clients/.zpkg.toml
+          test -f consumer/zed_modules/opto-sync/syncer/.zpkg.toml
+          grep -q 'name = "opto-sync-e2e"' consumer/.zpkg.lock
+          grep -q 'name = "opto-sync-clients"' consumer/.zpkg.lock
+          grep -q 'name = "syncer"' consumer/.zpkg.lock
+          cp consumer/.zpkg.lock /tmp/first-install.lock
+
+      - name: Delete all downloaded state and reinstall exactly from the lock
+        shell: bash
+        env:
+          ZED: ${{ github.workspace }}/zed-cli/target/release/zed
+        run: |
+          set -euo pipefail
+          rm -rf consumer/zed_modules "$ZED_PKG_HOME"
+          mkdir -p "$ZED_PKG_HOME"
+          (cd consumer && "$ZED" install --frozen --install-mode copy)
+          cmp /tmp/first-install.lock consumer/.zpkg.lock
+          test -f consumer/zed_modules/opto-sync/opto-sync-e2e/.zpkg.toml
+          test -f consumer/zed_modules/opto-sync/opto-sync-clients/.zpkg.toml
+          test -f consumer/zed_modules/opto-sync/syncer/.zpkg.toml
+
+      - name: Upload the certified lockfile
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opto-sync-${{ matrix.cloud }}-zed-lock
+          path: consumer/.zpkg.lock
+          retention-days: 30

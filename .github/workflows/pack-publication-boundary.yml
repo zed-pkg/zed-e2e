@@ -35,11 +35,13 @@ jobs:
       - name: Check out zed-e2e
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          persist-credentials: false
           path: zed-e2e
 
       - name: Check out current zed-cli main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          persist-credentials: false
           repository: zed-pkg/zed-cli
           ref: main
           path: zed-cli

@@ -2,22 +2,52 @@
 org = "zed-pkg"
 name = "zed-e2e"
 version = "0.1.0"
-description = "part of zed-pkg: end-to-end tests (Playwright, Puppeteer, Selenium) for the Rust web server, Rust API server, and zed CLI"
+description = "Full-stack browser, CLI, registry, PostgreSQL, Kubernetes, and R2 acceptance harness for Zed"
 license = "MIT"
-keywords = ["zed-pkg", "package-manager"]
+keywords = ["zed", "e2e", "playwright", "kubernetes", "r2"]
+language = "typescript"
 
 [package.repository]
 vcs = "git"
 url = "https://github.com/zed-pkg/zed-e2e"
 
-[publish]
-include_readme = true
-tag_format = "v{version}"
-exclude = [".env", ".env.*", ".direnv/**", ".zed/**", ".zed-pack/**", ".vendor/.zed/**", "target/**", "**/target/**", "**/node_modules/**", "tmp/**", "**/*.log", ".DS_Store"]
+[dependencies]
+"zed-pkg/zed-api-server" = "^0.1.0"
+"zed-pkg/zed-cli" = "^0.1.0"
+"zed-pkg/zed-interfaces" = "^0.1.0"
+"zed-pkg/zed-web-server" = "^0.1.0"
 
 [install]
+adapter = "none"
 dir = ".vendor/.zed"
 
 [targets.repository]
 dir = "."
-adapter = "none"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/harness/stack.ts\" && test -f \"$ZED_PKG_TEST_TARGET/cluster/e2e.sh\""
+exclude = [
+  ".env",
+  ".env.*",
+  ".direnv/**",
+  ".zed/**",
+  ".zed-pack/**",
+  ".vendor/.zed/**",
+  ".stack/**",
+  "**/node_modules/**",
+  "target/**",
+  "**/target/**",
+  "playwright-report/**",
+  "test-results/**",
+  "ci-diagnostics/**",
+  "artifacts/**",
+  "tmp/**",
+  "**/*.log",
+  ".DS_Store",
+]
+
+[scripts]
+typecheck = "npm ci && npm run typecheck"
+harness = "npm ci && npm run test:harness"

@@ -58,11 +58,18 @@ log "zed publish"
 ( cd "$PKG_DIR" && zed publish --skip-vcs-checks ) || die "publish failed"
 pass "published $ORG/$PKG@$VER"
 
-# 2. immutability: re-publishing the same version must be rejected -----------
+# 2. immutability: identical-bytes republish is an idempotent no-op, but a
+#    republish with CHANGED bytes must be rejected.
+RETRY_OUT="$( (cd "$PKG_DIR" && zed publish --skip-vcs-checks) 2>&1 )" \
+  || die "identical-bytes republish should succeed idempotently:\n$RETRY_OUT"
+printf '%s\n' "$RETRY_OUT" | grep -q 'identical sha256' \
+  || die "identical-bytes republish did not report the idempotent skip:\n$RETRY_OUT"
+pass "identical-bytes republish is an idempotent no-op"
+printf 'mutated\n' >> "$PKG_DIR/src/index.js"
 if ( cd "$PKG_DIR" && zed publish --skip-vcs-checks ) 2>/dev/null; then
-  die "re-publishing an existing version should have failed (versions are immutable)"
+  die "re-publishing $VER with changed bytes should have failed (versions are immutable)"
 fi
-pass "duplicate publish correctly rejected (immutable versions)"
+pass "changed-bytes republish correctly rejected (immutable versions)"
 
 # 3. find --------------------------------------------------------------------
 log "zed find $PKG"

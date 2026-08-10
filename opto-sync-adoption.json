@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "wrapperRepository": "zed-pkg/zed-sync",
+  "wrapperRef": "540eacde4f9fe69e128aab68cfc46daae7c6c4f5",
+  "wrapperPullRequest": 4,
+  "e2eRepository": "zed-pkg/zed-e2e",
+  "rolloutIssue": "DEN-1386",
+  "parentIssue": "DEN-313",
+  "implementationIssue": "DEN-1153",
+  "releaseGates": ["DEN-309", "DEN-363"],
+  "releaseState": "blocked-until-certified-package-published",
+  "dependency": {
+    "package": "opto-sync/opto-sync-clients",
+    "range": "^0.2.0",
+    "installRoot": "zed_modules/opto-sync/opto-sync-clients"
+  },
+  "nativeAdapters": {
+    "rust": "zed_modules/opto-sync/opto-sync-clients/clients/rust",
+    "typescript": "zed_modules/opto-sync/opto-sync-clients/clients/ts",
+    "dart": "zed_modules/opto-sync/opto-sync-clients/clients/dart"
+  },
+  "requiredScenarios": [
+    "frozen-install-provenance",
+    "offline-restart",
+    "optimistic-local-view-rebase",
+    "remote-confirmed-write",
+    "idempotent-replay",
+    "conflict-and-tombstone",
+    "indexeddb",
+    "sqlite",
+    "postgres-supabase",
+    "background-handoff",
+    "zed-package-bootstrap-independence"
+  ],
+  "legacyParityRequired": false,
+  "bootstrapIndependent": true,
+  "notes": [
+    "zed-sync is the Zed product adapter; it is not part of package-manager bootstrap",
+    "live certification is intentionally blocked until the real release lock exists",
+    "the Zed CLI and registry graph must remain free of Opto-Sync and zed-sync runtime dependencies"
+  ]
+}

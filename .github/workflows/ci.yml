@@ -1,8 +1,7 @@
 name: ci
 
-# This suite's real inputs are the sibling repositories' default branches,
-# which change without a commit landing here. The nightly run catches that
-# cross-repository drift; pull requests validate harness changes immediately.
+# Sibling default branches are intentional nightly compatibility inputs. Pull
+# requests validate the exact GitHub-generated integration commit.
 on:
   push:
     branches: [main]
@@ -33,17 +32,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - name: Check out zed-e2e
+      - name: Check out the exact PR integration commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-e2e
+          ref: ${{ github.sha }}
           path: zed-e2e
           persist-credentials: false
           show-progress: false
 
-      # Sibling checkouts the harness builds and drives. Their default branches
-      # are intentional inputs: this workflow is also a nightly compatibility
-      # canary, while every third-party action itself remains immutable.
       - name: Check out zed-interfaces
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -128,8 +125,6 @@ jobs:
       - name: Start one collision-safe bounded memory-backed registry stack
         working-directory: zed-e2e
         env:
-          # Official pgvector 0.8.6 + Postgres 16 Bookworm, pinned to the
-          # linux/amd64 manifest used by GitHub's ubuntu-24.04 runners.
           ZED_E2E_PG_IMAGE: pgvector/pgvector:0.8.6-pg16-bookworm@sha256:84a355869251af1a3379cfc9fa7b4dbf962c03f642a4bb7b339a203925071c43
           ZED_E2E_STORAGE_BACKEND: memory
           ZED_E2E_STORAGE_MEMORY_MAX_BYTES: "268435456"
@@ -150,7 +145,7 @@ jobs:
           set -euo pipefail
           ZED_E2E_API_URL="http://127.0.0.1:$ZED_E2E_API_PORT" \
           ZED_E2E_WEB_URL="http://127.0.0.1:$ZED_E2E_WEB_PORT" \
-            npm run e2e
+            npm run e2e 2>&1 | tee "$RUNNER_TEMP/zed-e2e.log"
 
       - name: Prove package artifacts never touched disk
         working-directory: zed-e2e
@@ -163,17 +158,50 @@ jobs:
             exit 1
           fi
 
-      - name: Capture stack diagnostics
+      - name: Capture stack and generated-test diagnostics
         if: failure()
         run: |
           set +e
-          destination="zed-e2e/test-results/stack"
-          mkdir -p "$destination"
+          destination="zed-e2e/ci-diagnostics"
+          mkdir -p "$destination/stack" "$destination/generated-tests"
+          cp "$RUNNER_TEMP/zed-e2e.log" "$destination/e2e.log" 2>/dev/null || true
           if test -d zed-e2e/.stack; then
-            cp -a zed-e2e/.stack/. "$destination/"
+            cp -a zed-e2e/.stack/. "$destination/stack/"
           fi
-          docker logs "$ZED_E2E_PG_CONTAINER" > "$destination/postgres.log" 2>&1 || true
-          for log in "$destination"/*.log; do
+          docker logs "$ZED_E2E_PG_CONTAINER" > "$destination/stack/postgres.log" 2>&1 || true
+
+          find zed-e2e zed-cli zed-api-server.rs zed-web-server.rs "$RUNNER_TEMP" \
+            -type f \
+            \( -name '*.test.mjs' -o -name '*.test.js' -o -name '*adapter*.mjs' -o -name '*adapter*.js' \) \
+            -not -path '*/node_modules/*' -not -path '*/target/*' \
+            -print > "$destination/generated-test-files.txt" 2>&1 || true
+
+          grep -RInF --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=target \
+            --exclude-dir=ci-diagnostics \
+            'goLive records an audit line' \
+            zed-e2e zed-cli zed-api-server.rs zed-web-server.rs "$RUNNER_TEMP" \
+            > "$destination/generated-test-locations.txt" 2>&1 || true
+          grep -RInF --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=target \
+            --exclude-dir=ci-diagnostics \
+            'same target from concurrent callers' \
+            zed-e2e zed-cli zed-api-server.rs zed-web-server.rs "$RUNNER_TEMP" \
+            >> "$destination/generated-test-locations.txt" 2>&1 || true
+
+          while IFS= read -r source; do
+            test -f "$source" || continue
+            case "$source" in
+              *node_modules*|*target*) continue ;;
+            esac
+            relative="${source#/}"
+            target="$destination/generated-tests/${relative//\//__}"
+            cp "$source" "$target" 2>/dev/null || true
+          done < "$destination/generated-test-files.txt"
+
+          for log in \
+            "$destination/e2e.log" \
+            "$destination/stack"/*.log \
+            "$destination/generated-test-locations.txt" \
+            "$destination/generated-test-files.txt"; do
             test -f "$log" || continue
             printf '\n===== %s =====\n' "$log"
             cat "$log"
@@ -192,6 +220,7 @@ jobs:
           path: |
             zed-e2e/playwright-report
             zed-e2e/test-results
+            zed-e2e/ci-diagnostics
           if-no-files-found: warn
           retention-days: 14
           include-hidden-files: true

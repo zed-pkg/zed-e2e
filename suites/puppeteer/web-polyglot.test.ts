@@ -9,7 +9,7 @@ import { ensurePolyglotSeeded, POLYGLOT_SEED } from "../../harness/fixtures.js";
 // the package page's install snippet and version table are the consumer-facing
 // contract for a language slice, and a rendering regression that only shows up
 // in raw Chromium would otherwise ship.
-const { base, repositoryTarget, targets } = POLYGLOT_SEED;
+const { base, legacyRepositoryName, targets } = POLYGLOT_SEED;
 const languageNames = targets.map((t) => t.name ?? `${base.name}-${t.key}`);
 
 let browser: Browser;
@@ -56,7 +56,7 @@ test("the whole-repository artifact uses the canonical source identity", async (
 });
 
 test("the legacy root-target name is not published as an alias", async () => {
-  const response = await page.goto(`${WEB_URL}/p/${base.org}/${repositoryTarget}`, {
+  const response = await page.goto(`${WEB_URL}/p/${base.org}/${legacyRepositoryName}`, {
     waitUntil: "networkidle0",
   });
   assert.equal(response?.status(), 404);

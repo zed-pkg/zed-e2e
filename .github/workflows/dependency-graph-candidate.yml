@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/dependency-graph-candidate.yml"
       - "harness/graph-fixtures.ts"
+      - "harness/stack.ts"
       - "suites/playwright/dependency-graph.spec.ts"
       - "suites/playwright/dependency-graph-projection.spec.ts"
   workflow_dispatch:
@@ -19,9 +20,12 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-  # Exact canonical merge commits. Immutable SHAs keep the final
-  # certification run independent of moving branches.
-  ZED_INTERFACES_CANDIDATE: 7d31f80dd8a310f218931165a3ad636a2f32b932
+  # Exact canonical merge commits. The API consumes the additive binary
+  # artifact child; graph consumers intentionally pin its graph-contract
+  # parent. Immutable SHAs keep the final run independent of moving branches.
+  ZED_INTERFACES_CANDIDATE: 4b87e425b04777b0ee413971dc1df805d24f295f
+  ZED_GRAPH_INTERFACES_CANDIDATE: 7d31f80dd8a310f218931165a3ad636a2f32b932
+  ZED_LIB_CORE_CANDIDATE: c3d486a1519381276fbec02aa25247f542924443
   ZED_API_CANDIDATE: 7e280f7d6a23432b5414ffeb591ca77737b1ce37
   ZED_WEB_CANDIDATE: efa3a08a44fb3fa06b440d2547ec6672963ca328
   ZED_CLI_CANDIDATE: 3265041478d6873ce3815b11930bd1e8e8004837
@@ -53,6 +57,13 @@ jobs:
           ref: ${{ env.ZED_API_CANDIDATE }}
           path: zed-api-server.rs
 
+      - name: Checkout zed-lib-core candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-lib-core
+          ref: ${{ env.ZED_LIB_CORE_CANDIDATE }}
+          path: zed-lib-core
+
       - name: Checkout zed-web-server candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -73,6 +84,52 @@ jobs:
           repository: zed-pkg/zed-clients
           ref: ${{ env.ZED_CLIENTS_CANDIDATE }}
           path: zed-clients
+
+      - name: Verify immutable candidate provenance
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import subprocess
+
+          candidates = {
+              "zed-interfaces": os.environ["ZED_INTERFACES_CANDIDATE"],
+              "zed-lib-core": os.environ["ZED_LIB_CORE_CANDIDATE"],
+              "zed-api-server.rs": os.environ["ZED_API_CANDIDATE"],
+              "zed-web-server.rs": os.environ["ZED_WEB_CANDIDATE"],
+              "zed-cli": os.environ["ZED_CLI_CANDIDATE"],
+              "zed-clients": os.environ["ZED_CLIENTS_CANDIDATE"],
+          }
+          for repository, expected in candidates.items():
+              actual = subprocess.check_output(
+                  ["git", "-C", repository, "rev-parse", "HEAD"],
+                  text=True,
+              ).strip()
+              if actual != expected:
+                  raise SystemExit(
+                      f"{repository} checkout drifted: expected {expected}, got {actual}"
+                  )
+
+          graph_interfaces = os.environ["ZED_GRAPH_INTERFACES_CANDIDATE"]
+          api_interfaces = os.environ["ZED_INTERFACES_CANDIDATE"]
+          core = os.environ["ZED_LIB_CORE_CANDIDATE"]
+          required_pins = {
+              "zed-lib-core/src/rust-orm/Cargo.toml": [graph_interfaces],
+              "zed-api-server.rs/Cargo.toml": [api_interfaces, core],
+              "zed-api-server.rs/Cargo.lock": [api_interfaces, core],
+              "zed-web-server.rs/Cargo.toml": [graph_interfaces, core],
+              "zed-web-server.rs/Cargo.lock": [graph_interfaces, core],
+              "zed-cli/Cargo.toml": [graph_interfaces],
+              "zed-cli/Cargo.lock": [graph_interfaces],
+              "zed-clients/.github/workflows/ci.yml": [graph_interfaces],
+          }
+          for filename, expected_revisions in required_pins.items():
+              content = pathlib.Path(filename).read_text()
+              for expected in expected_revisions:
+                  if expected not in content:
+                      raise SystemExit(f"{filename} does not pin {expected}")
+          PY
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4

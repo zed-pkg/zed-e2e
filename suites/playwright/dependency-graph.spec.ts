@@ -102,7 +102,7 @@ type DownloadDependencyGraph = (options: {
   readonly version: string;
   readonly format: string;
   readonly token: string;
-  readonly allowInsecureTransport: boolean;
+  readonly allowInsecureTransport?: boolean;
   readonly ifNoneMatch?: string;
   readonly timeoutMs: number;
 }) => Promise<TypeScriptGraphDownload>;
@@ -343,9 +343,6 @@ test.describe("dependency graph candidate stack", () => {
       version: fixture.app.version,
       format: "json5",
       token: fixture.token,
-      // The candidate stack is isolated on loopback and deliberately uses
-      // cleartext HTTP. Production callers retain the client's secure default.
-      allowInsecureTransport: true,
       timeoutMs: 10_000,
     } as const;
 

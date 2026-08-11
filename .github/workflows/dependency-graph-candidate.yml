@@ -6,6 +6,7 @@ on:
       - ".github/workflows/dependency-graph-candidate.yml"
       - "harness/graph-fixtures.ts"
       - "suites/playwright/dependency-graph.spec.ts"
+      - "suites/playwright/dependency-graph-projection.spec.ts"
   workflow_dispatch:
 
 permissions:
@@ -18,12 +19,12 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-  # Exact merge commits currently at each production `main` tip. Keeping
-  # immutable SHAs here proves the released composition without trusting a
-  # moving branch during a certification run.
+  # Exact immutable commits reachable from each production `main` branch.
+  # Keeping fixed SHAs here certifies the released composition without
+  # trusting a moving branch during the browser and CLI run.
   ZED_INTERFACES_CANDIDATE: 15577e17a820c3b2b1a39ee178d4645185309a05
   ZED_API_CANDIDATE: 265bed1aba00c8b91c9f713b26b87cb044546f6c
-  ZED_WEB_CANDIDATE: dc83cd21c2672bc93a75a929f1f423babf3d6a9b
+  ZED_WEB_CANDIDATE: 26f830027e7ad7a1e454289702202d6ae9ad2350
   ZED_CLI_CANDIDATE: f6147979511e7aee30410647413e05552036e0d5
 
 jobs:
@@ -123,6 +124,7 @@ jobs:
         run: >-
           npx playwright test
           suites/playwright/dependency-graph.spec.ts
+          suites/playwright/dependency-graph-projection.spec.ts
           --project=chromium
           --workers=1
 

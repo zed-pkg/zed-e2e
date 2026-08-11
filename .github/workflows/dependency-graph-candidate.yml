@@ -19,12 +19,12 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-  # Exact immutable candidate commits. The web candidate is the focused
-  # hit-target repair from #26; after it merges this workflow is repinned to
-  # the resulting production `main` commit and executed once more.
+  # Exact immutable commits reachable from each production `main` branch.
+  # Keeping fixed SHAs here certifies the released composition without
+  # trusting a moving branch during the browser and CLI run.
   ZED_INTERFACES_CANDIDATE: 15577e17a820c3b2b1a39ee178d4645185309a05
   ZED_API_CANDIDATE: 265bed1aba00c8b91c9f713b26b87cb044546f6c
-  ZED_WEB_CANDIDATE: b565c015eacfa8642c37b57bf8f86e75604dc9e8
+  ZED_WEB_CANDIDATE: 26f830027e7ad7a1e454289702202d6ae9ad2350
   ZED_CLI_CANDIDATE: f6147979511e7aee30410647413e05552036e0d5
 
 jobs:

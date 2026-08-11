@@ -217,6 +217,13 @@ test.describe("dependency graph candidate stack", () => {
     await expect(workspace).toContainText("graph-core");
     await expect(workspace).toContainText("graph-util");
 
+    await page.evaluate(() => {
+      location.hash = "dependency-graph=graph-e2e%2Fgraph-core";
+    });
+    await expect(workspace.locator(".dg-inspector h3")).toHaveText(
+      "graph-e2e/graph-core",
+    );
+
     const controlsText = await workspace.innerText();
     expect(controlsText).toMatch(/direct dependencies/i);
     expect(controlsText).toMatch(/transitive dependencies/i);

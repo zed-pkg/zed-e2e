@@ -19,6 +19,16 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   reporter: [["list"], ["html", { open: "never" }]],
+  // Name the browser explicitly so focused candidate workflows can select it
+  // with `--project=chromium`. Without a projects entry Playwright exposes an
+  // unnamed default project, making that otherwise-valid selector fail before
+  // any graph test reaches the running stack.
+  projects: [
+    {
+      name: "chromium",
+      use: { browserName: "chromium" },
+    },
+  ],
   use: {
     baseURL: process.env.ZED_E2E_WEB_URL ?? "http://127.0.0.1:48081",
     trace: "retain-on-failure",

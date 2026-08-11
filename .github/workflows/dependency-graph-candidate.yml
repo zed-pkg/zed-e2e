@@ -23,7 +23,7 @@ env:
   # reproducible and prevents a moving branch from silently changing a run.
   ZED_INTERFACES_CANDIDATE: 3205be2128a527d76a33fe85706f878fdc81db11
   ZED_API_CANDIDATE: 09a59c5228bb4aab544603af78916788b1334139
-  ZED_WEB_CANDIDATE: 7361ff67ae44ea2a996ae0cad1f339b2976f477a
+  ZED_WEB_CANDIDATE: c7d1353e1be4a6331cd613f8573d352b3bbe6c0e
   ZED_CLI_CANDIDATE: 6bd69bf6df74aa7cbd9f54a435abdd9b897ad870
 
 jobs:

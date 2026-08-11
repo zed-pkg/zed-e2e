@@ -18,13 +18,13 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-  # Repoint these exact candidate heads to `main` after their coordinated
-  # production PRs merge. Pinning commits here makes this pre-merge evidence
-  # reproducible and prevents a moving branch from silently changing a run.
-  ZED_INTERFACES_CANDIDATE: 3205be2128a527d76a33fe85706f878fdc81db11
-  ZED_API_CANDIDATE: 09a59c5228bb4aab544603af78916788b1334139
-  ZED_WEB_CANDIDATE: d1928c22bad515b6a43d2146f84bbd67577a3b4a
-  ZED_CLI_CANDIDATE: 6bd69bf6df74aa7cbd9f54a435abdd9b897ad870
+  # Exact merge commits currently at each production `main` tip. Keeping
+  # immutable SHAs here proves the released composition without trusting a
+  # moving branch during a certification run.
+  ZED_INTERFACES_CANDIDATE: 15577e17a820c3b2b1a39ee178d4645185309a05
+  ZED_API_CANDIDATE: 265bed1aba00c8b91c9f713b26b87cb044546f6c
+  ZED_WEB_CANDIDATE: dc83cd21c2672bc93a75a929f1f423babf3d6a9b
+  ZED_CLI_CANDIDATE: f6147979511e7aee30410647413e05552036e0d5
 
 jobs:
   graph-candidate:

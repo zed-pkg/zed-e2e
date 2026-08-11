@@ -181,9 +181,9 @@ async function startPostgres(): Promise<void> {
 
 async function buildServers(): Promise<void> {
   // Debug profile: fast to build, plenty fast to serve e2e traffic.
-  await sh("cargo", ["build", "--bin", "zed-api-server"], { cwd: API_REPO });
-  await sh("cargo", ["build", "--bin", "zed-web-server"], { cwd: WEB_REPO });
-  await sh("cargo", ["build", "--bin", "zed"], { cwd: CLI_REPO });
+  await sh("cargo", ["build", "--locked", "--bin", "zed-api-server"], { cwd: API_REPO });
+  await sh("cargo", ["build", "--locked", "--bin", "zed-web-server"], { cwd: WEB_REPO });
+  await sh("cargo", ["build", "--locked", "--bin", "zed"], { cwd: CLI_REPO });
 }
 
 /**

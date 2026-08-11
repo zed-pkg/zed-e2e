@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/dependency-graph-candidate.yml"
       - "harness/graph-fixtures.ts"
+      - "harness/stack.ts"
       - "suites/playwright/dependency-graph.spec.ts"
   workflow_dispatch:
 
@@ -18,17 +19,22 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-  # Exact merge commits currently at each production `main` tip. Keeping
-  # immutable SHAs here proves the released composition without trusting a
-  # moving branch during a certification run.
-  ZED_INTERFACES_CANDIDATE: 15577e17a820c3b2b1a39ee178d4645185309a05
-  ZED_API_CANDIDATE: 265bed1aba00c8b91c9f713b26b87cb044546f6c
-  ZED_WEB_CANDIDATE: dc83cd21c2672bc93a75a929f1f423babf3d6a9b
-  ZED_CLI_CANDIDATE: f6147979511e7aee30410647413e05552036e0d5
+  # Exact reviewed candidate commits. The coordinator repins the service
+  # candidates after their final merges; immutable SHAs keep every
+  # certification run independent of moving branches.
+  # The API also consumes the additive binary-artifact contract. The other
+  # graph consumers intentionally remain on its canonical graph-contract parent.
+  ZED_INTERFACES_CANDIDATE: 4b87e425b04777b0ee413971dc1df805d24f295f
+  ZED_GRAPH_INTERFACES_CANDIDATE: 7d31f80dd8a310f218931165a3ad636a2f32b932
+  ZED_LIB_CORE_CANDIDATE: c3d486a1519381276fbec02aa25247f542924443
+  ZED_API_CANDIDATE: ef5dcd0d49741bd3a44d9cfd836774436b6c76ce
+  ZED_WEB_CANDIDATE: 77e8fbe18b774da02b6852c9b866b0b64b6d59be
+  ZED_CLI_CANDIDATE: 3265041478d6873ce3815b11930bd1e8e8004837
+  ZED_CLIENTS_CANDIDATE: 799c967f44fdd7932d18432257a2bd46eff4e33a
 
 jobs:
   graph-candidate:
-    name: PostgreSQL + API + web + CLI + Chromium
+    name: PostgreSQL + API + web + CLI + TypeScript client + Chromium
     runs-on: ubuntu-latest
     timeout-minutes: 50
 
@@ -52,6 +58,13 @@ jobs:
           ref: ${{ env.ZED_API_CANDIDATE }}
           path: zed-api-server.rs
 
+      - name: Checkout zed-lib-core candidate
+        uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-lib-core
+          ref: ${{ env.ZED_LIB_CORE_CANDIDATE }}
+          path: zed-lib-core
+
       - name: Checkout zed-web-server candidate
         uses: actions/checkout@v4
         with:
@@ -65,6 +78,59 @@ jobs:
           repository: zed-pkg/zed-cli
           ref: ${{ env.ZED_CLI_CANDIDATE }}
           path: zed-cli
+
+      - name: Checkout zed-clients candidate
+        uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-clients
+          ref: ${{ env.ZED_CLIENTS_CANDIDATE }}
+          path: zed-clients
+
+      - name: Verify immutable candidate provenance
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import subprocess
+
+          candidates = {
+              "zed-interfaces": os.environ["ZED_INTERFACES_CANDIDATE"],
+              "zed-lib-core": os.environ["ZED_LIB_CORE_CANDIDATE"],
+              "zed-api-server.rs": os.environ["ZED_API_CANDIDATE"],
+              "zed-web-server.rs": os.environ["ZED_WEB_CANDIDATE"],
+              "zed-cli": os.environ["ZED_CLI_CANDIDATE"],
+              "zed-clients": os.environ["ZED_CLIENTS_CANDIDATE"],
+          }
+          for repository, expected in candidates.items():
+              actual = subprocess.check_output(
+                  ["git", "-C", repository, "rev-parse", "HEAD"],
+                  text=True,
+              ).strip()
+              if actual != expected:
+                  raise SystemExit(
+                      f"{repository} checkout drifted: expected {expected}, got {actual}"
+                  )
+
+          graph_interfaces = os.environ["ZED_GRAPH_INTERFACES_CANDIDATE"]
+          api_interfaces = os.environ["ZED_INTERFACES_CANDIDATE"]
+          core = os.environ["ZED_LIB_CORE_CANDIDATE"]
+          required_pins = {
+              "zed-lib-core/src/rust-orm/Cargo.toml": [graph_interfaces],
+              "zed-api-server.rs/Cargo.toml": [api_interfaces, core],
+              "zed-api-server.rs/Cargo.lock": [api_interfaces, core],
+              "zed-web-server.rs/Cargo.toml": [graph_interfaces, core],
+              "zed-web-server.rs/Cargo.lock": [graph_interfaces, core],
+              "zed-cli/Cargo.toml": [graph_interfaces],
+              "zed-cli/Cargo.lock": [graph_interfaces],
+              "zed-clients/.github/workflows/ci.yml": [graph_interfaces],
+          }
+          for filename, expected_revisions in required_pins.items():
+              content = pathlib.Path(filename).read_text()
+              for expected in expected_revisions:
+                  if expected not in content:
+                      raise SystemExit(f"{filename} does not pin {expected}")
+          PY
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -83,11 +149,19 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: zed-e2e/package-lock.json
+          cache-dependency-path: |
+            zed-e2e/package-lock.json
+            zed-clients/clients/typescript/package-lock.json
 
       - name: Install E2E dependencies
         working-directory: zed-e2e
         run: npm ci
+
+      - name: Build and test pinned TypeScript client
+        working-directory: zed-clients/clients/typescript
+        env:
+          ZED_INTERFACES_FORMAT_FIXTURE: ${{ github.workspace }}/zed-interfaces/fixtures/dependency-graph-formats-v1.json
+        run: npm ci && npm run build && npm test
 
       - name: Install Chromium
         working-directory: zed-e2e
@@ -112,7 +186,7 @@ jobs:
           --github-env "$GITHUB_ENV"
           -- npm run stack:up
 
-      - name: Run dependency graph browser and CLI certification
+      - name: Run dependency graph browser, CLI, and client certification
         working-directory: zed-e2e
         env:
           ZED_E2E_DEPENDENCY_GRAPH_CANDIDATE: "1"
@@ -120,6 +194,7 @@ jobs:
           ZED_E2E_STORAGE_BACKEND: memory
           ZED_E2E_ARTIFACT_SERVE_MEMORY_BUDGET_BYTES: "16777216"
           ZED_E2E_MAX_ARTIFACT_BYTES: "8388608"
+          ZED_E2E_TYPESCRIPT_CLIENT_MODULE: ${{ github.workspace }}/zed-clients/clients/typescript/dist/index.js
         run: >-
           npx playwright test
           suites/playwright/dependency-graph.spec.ts

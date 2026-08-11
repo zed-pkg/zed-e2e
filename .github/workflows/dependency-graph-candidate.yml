@@ -20,15 +20,14 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-  # Exact reviewed candidate commits. The coordinator repins the service
-  # candidates after their final merges; immutable SHAs keep every
-  # certification run independent of moving branches.
+  # Exact immutable commits reachable from each production `main` branch.
+  # Fixed SHAs keep every certification run independent of moving branches.
   # The API also consumes the additive binary-artifact contract. The other
   # graph consumers intentionally remain on its canonical graph-contract parent.
   ZED_INTERFACES_CANDIDATE: 4b87e425b04777b0ee413971dc1df805d24f295f
   ZED_GRAPH_INTERFACES_CANDIDATE: 7d31f80dd8a310f218931165a3ad636a2f32b932
   ZED_LIB_CORE_CANDIDATE: c3d486a1519381276fbec02aa25247f542924443
-  ZED_API_CANDIDATE: ef5dcd0d49741bd3a44d9cfd836774436b6c76ce
+  ZED_API_CANDIDATE: 7e280f7d6a23432b5414ffeb591ca77737b1ce37
   ZED_WEB_CANDIDATE: 77e8fbe18b774da02b6852c9b866b0b64b6d59be
   ZED_CLI_CANDIDATE: 3265041478d6873ce3815b11930bd1e8e8004837
   ZED_CLIENTS_CANDIDATE: 799c967f44fdd7932d18432257a2bd46eff4e33a

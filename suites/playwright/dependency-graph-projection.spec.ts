@@ -110,7 +110,7 @@ test.describe("dependency graph visible projection exports", () => {
     expect(pngHeight).toBeGreaterThan(0);
     expect(pngWidth).toBeLessThanOrEqual(4096);
     expect(pngHeight).toBeLessThanOrEqual(4096);
-    expect(pngBytes.subarray(-12, -8).toString("ascii")).toBe("IEND");
+    expect(pngBytes.subarray(-8, -4).toString("ascii")).toBe("IEND");
     await expect(workspace.locator('[data-role="status"]')).toContainText(
       "Downloaded the visible graph projection as PNG.",
     );

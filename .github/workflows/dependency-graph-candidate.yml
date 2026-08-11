@@ -115,6 +115,7 @@ jobs:
       - name: Run dependency graph browser and CLI certification
         working-directory: zed-e2e
         env:
+          ZED_E2E_DEPENDENCY_GRAPH_CANDIDATE: "1"
           ZED_E2E_EXTERNAL_STACK: "1"
           ZED_E2E_STORAGE_BACKEND: memory
           ZED_E2E_ARTIFACT_SERVE_MEMORY_BUDGET_BYTES: "16777216"

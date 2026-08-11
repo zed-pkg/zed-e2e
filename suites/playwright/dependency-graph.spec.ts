@@ -49,6 +49,11 @@ async function expectImmutableValidator(
 }
 
 test.describe("dependency graph candidate stack", () => {
+  test.skip(
+    process.env.ZED_E2E_DEPENDENCY_GRAPH_CANDIDATE !== "1",
+    "requires the dependency-graph candidate workflow's pinned sibling revisions",
+  );
+
   test.beforeAll(async () => {
     await ensureDependencyGraphSeeded();
   });

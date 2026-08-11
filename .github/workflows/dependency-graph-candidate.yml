@@ -1,0 +1,153 @@
+name: Dependency graph candidate E2E
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/dependency-graph-candidate.yml"
+      - "harness/graph-fixtures.ts"
+      - "suites/playwright/dependency-graph.spec.ts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-graph-candidate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  # Repoint these exact candidate heads to `main` after their coordinated
+  # production PRs merge. Pinning commits here makes this pre-merge evidence
+  # reproducible and prevents a moving branch from silently changing a run.
+  ZED_INTERFACES_CANDIDATE: 3205be2128a527d76a33fe85706f878fdc81db11
+  ZED_API_CANDIDATE: 09a59c5228bb4aab544603af78916788b1334139
+  ZED_WEB_CANDIDATE: 7361ff67ae44ea2a996ae0cad1f339b2976f477a
+  ZED_CLI_CANDIDATE: 6bd69bf6df74aa7cbd9f54a435abdd9b897ad870
+
+jobs:
+  graph-candidate:
+    name: PostgreSQL + API + web + CLI + Chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+
+    steps:
+      - name: Checkout E2E candidate
+        uses: actions/checkout@v4
+        with:
+          path: zed-e2e
+
+      - name: Checkout zed-interfaces candidate
+        uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-interfaces
+          ref: ${{ env.ZED_INTERFACES_CANDIDATE }}
+          path: zed-interfaces
+
+      - name: Checkout zed-api-server candidate
+        uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-api-server.rs
+          ref: ${{ env.ZED_API_CANDIDATE }}
+          path: zed-api-server.rs
+
+      - name: Checkout zed-web-server candidate
+        uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-web-server.rs
+          ref: ${{ env.ZED_WEB_CANDIDATE }}
+          path: zed-web-server.rs
+
+      - name: Checkout zed-cli candidate
+        uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_CANDIDATE }}
+          path: zed-cli
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            zed-api-server.rs
+            zed-web-server.rs
+            zed-cli
+          shared-key: dependency-graph-candidate
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: zed-e2e/package-lock.json
+
+      - name: Install E2E dependencies
+        working-directory: zed-e2e
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: zed-e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Type-check graph tests and harness
+        working-directory: zed-e2e
+        run: npm run typecheck
+
+      - name: Run harness unit tests
+        working-directory: zed-e2e
+        run: npm run test:harness
+
+      - name: Boot candidate stack on allocated ports
+        working-directory: zed-e2e
+        env:
+          ZED_E2E_STORAGE_BACKEND: memory
+          ZED_E2E_ARTIFACT_SERVE_MEMORY_BUDGET_BYTES: "16777216"
+          ZED_E2E_MAX_ARTIFACT_BYTES: "8388608"
+        run: >-
+          node scripts/allocate-stack-ports.mjs
+          --github-env "$GITHUB_ENV"
+          -- npm run stack:up
+
+      - name: Run dependency graph browser and CLI certification
+        working-directory: zed-e2e
+        env:
+          ZED_E2E_EXTERNAL_STACK: "1"
+          ZED_E2E_STORAGE_BACKEND: memory
+          ZED_E2E_ARTIFACT_SERVE_MEMORY_BUDGET_BYTES: "16777216"
+          ZED_E2E_MAX_ARTIFACT_BYTES: "8388608"
+        run: >-
+          npx playwright test
+          suites/playwright/dependency-graph.spec.ts
+          --project=chromium
+          --workers=1
+
+      - name: Print stack diagnostics
+        if: failure()
+        working-directory: zed-e2e
+        run: |
+          echo "API URL: ${ZED_E2E_API_URL:-unset}"
+          echo "Web URL: ${ZED_E2E_WEB_URL:-unset}"
+          find .e2e-state -maxdepth 1 -type f \( -name '*.log' -o -name '*.pid' \) -print -exec tail -n 250 {} \; 2>/dev/null || true
+
+      - name: Stop candidate stack
+        if: always()
+        working-directory: zed-e2e
+        env:
+          ZED_E2E_EXTERNAL_STACK: ""
+        run: npm run stack:down || true
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-graph-candidate-${{ github.run_id }}
+          path: |
+            zed-e2e/playwright-report
+            zed-e2e/test-results
+            zed-e2e/.e2e-state/*.log
+          if-no-files-found: ignore
+          retention-days: 14

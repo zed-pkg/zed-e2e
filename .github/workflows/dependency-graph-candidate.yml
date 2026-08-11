@@ -7,6 +7,7 @@ on:
       - "harness/graph-fixtures.ts"
       - "harness/stack.ts"
       - "suites/playwright/dependency-graph.spec.ts"
+      - "suites/playwright/dependency-graph-projection.spec.ts"
   workflow_dispatch:
 
 permissions:
@@ -198,6 +199,7 @@ jobs:
         run: >-
           npx playwright test
           suites/playwright/dependency-graph.spec.ts
+          suites/playwright/dependency-graph-projection.spec.ts
           --project=chromium
           --workers=1
 

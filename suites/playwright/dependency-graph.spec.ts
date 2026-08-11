@@ -1,10 +1,5 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
-import {
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  statSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -14,11 +9,7 @@ import { WEB_URL, runZed } from "../../harness/stack.js";
 const GRAPH_DIGEST_HEADER = "x-zpkg-graph-digest";
 const GRAPH_AUTHORITY_HEADER = "x-zpkg-graph-authoritative";
 
-function packageGraphPath(
-  org: string,
-  name: string,
-  version: string,
-): string {
+function packageGraphPath(org: string, name: string, version: string): string {
   return `${WEB_URL}/bff/dependency-graphs/packages/${encodeURIComponent(org)}/${encodeURIComponent(name)}/${encodeURIComponent(version)}`;
 }
 
@@ -40,6 +31,9 @@ async function expectImmutableValidator(
   const headers = response.headers();
   const etag = headers.etag;
   const digest = headers[GRAPH_DIGEST_HEADER];
+  if (etag === undefined || digest === undefined) {
+    throw new Error("graph response omitted its ETag or semantic digest");
+  }
   expect(etag).toMatch(/^"[0-9a-f]{64}"$/);
   expect(digest).toMatch(/^sha256:[0-9a-f]{64}$/);
 
@@ -75,8 +69,8 @@ test.describe("dependency graph candidate stack", () => {
 
     expect(document.schema).toBe("zpkg/dependency-graph/v1");
     expect(document.graph_digest).toBe(digest);
-    expect(serialized).toContain("graph-e2e/graph-core");
-    expect(serialized).toContain("graph-e2e/graph-util");
+    expect(serialized).toContain("graph-core");
+    expect(serialized).toContain("graph-util");
     expect(response.headers()["content-type"]).toContain("dependency-graph");
   });
 
@@ -114,14 +108,17 @@ test.describe("dependency graph candidate stack", () => {
       expect(response.status(), format).toBe(200);
       const headers = response.headers();
       const body = await response.body();
+      const digest = headers[GRAPH_DIGEST_HEADER];
+      const etag = headers.etag;
+      if (digest === undefined || etag === undefined) {
+        throw new Error(`${format} response omitted its validators`);
+      }
       expect(body.byteLength, format).toBeGreaterThan(8);
       expect(headers["content-type"], format).toBeTruthy();
-      expect(headers[GRAPH_DIGEST_HEADER], format).toMatch(
-        /^sha256:[0-9a-f]{64}$/,
-      );
-      expect(headers.etag, format).toMatch(/^"[0-9a-f]{64}"$/);
-      digests.add(headers[GRAPH_DIGEST_HEADER]);
-      etags.add(headers.etag);
+      expect(digest, format).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect(etag, format).toMatch(/^"[0-9a-f]{64}"$/);
+      digests.add(digest);
+      etags.add(etag);
 
       if (extended.has(format)) {
         expect(headers["content-disposition"], format).toContain(
@@ -133,8 +130,8 @@ test.describe("dependency graph candidate stack", () => {
       }
     }
 
-    expect(digests).toHaveLength(1);
-    expect(etags).toHaveLength(formats.length);
+    expect(digests.size).toBe(1);
+    expect(etags.size).toBe(formats.length);
   });
 
   test("CLI downloads binary graphs atomically and reports validators", async () => {

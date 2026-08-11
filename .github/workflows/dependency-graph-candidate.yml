@@ -19,14 +19,13 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-  # Exact reviewed candidate commits. The coordinator repins the service
-  # candidates after their final merges; immutable SHAs keep every
+  # Exact canonical merge commits. Immutable SHAs keep the final
   # certification run independent of moving branches.
   ZED_INTERFACES_CANDIDATE: 7d31f80dd8a310f218931165a3ad636a2f32b932
-  ZED_API_CANDIDATE: 9f4e4eeccc7f063caadc60238a62e81b6bca3488
-  ZED_WEB_CANDIDATE: 097120bd2be6f989c78b0fa37fd84cb7b4c13b08
-  ZED_CLI_CANDIDATE: b59e3a455431615a06c4b9255fdf5f3e823de6ba
-  ZED_CLIENTS_CANDIDATE: a74d3265733040e3f3e829765b521e2cf6a11d84
+  ZED_API_CANDIDATE: 7e280f7d6a23432b5414ffeb591ca77737b1ce37
+  ZED_WEB_CANDIDATE: efa3a08a44fb3fa06b440d2547ec6672963ca328
+  ZED_CLI_CANDIDATE: 3265041478d6873ce3815b11930bd1e8e8004837
+  ZED_CLIENTS_CANDIDATE: 799c967f44fdd7932d18432257a2bd46eff4e33a
 
 jobs:
   graph-candidate:

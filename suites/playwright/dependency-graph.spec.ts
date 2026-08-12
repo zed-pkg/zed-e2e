@@ -102,6 +102,7 @@ type DownloadDependencyGraph = (options: {
   readonly version: string;
   readonly format: string;
   readonly token: string;
+  readonly allowInsecureTransport?: boolean;
   readonly ifNoneMatch?: string;
   readonly timeoutMs: number;
 }) => Promise<TypeScriptGraphDownload>;
@@ -482,9 +483,47 @@ test.describe("dependency graph candidate stack", () => {
     page,
   }) => {
     const fixture = await ensureDependencyGraphSeeded();
+    const maliciousLabel =
+      '<img src=x data-zed-e2e-graph-xss onerror="window.__zedGraphXss=true">';
     const externalRequests: string[] = [];
     const pageErrors: string[] = [];
     const webOrigin = new URL(WEB_URL).origin;
+    await page.route(
+      packageGraphPath(
+        fixture.app.org,
+        fixture.app.name,
+        fixture.app.version,
+      ),
+      async (route) => {
+        const response = await route.fetch();
+        const document = await response.json();
+        if (
+          !Array.isArray(document.dependencies) ||
+          document.dependencies.length === 0
+        ) {
+          throw new Error("graph fixture did not contain a dependency template");
+        }
+        document.dependencies.push({
+          ...document.dependencies[0],
+          name: maliciousLabel,
+          requirement: "^9.9.9",
+        });
+        const body = JSON.stringify(document);
+        const headers = response.headers();
+        // route.fetch() decodes any transport encoding. Fulfill the modified
+        // representation as identity bytes with matching length metadata so
+        // the browser client still exercises its normal response validation.
+        delete headers["content-encoding"];
+        delete headers["transfer-encoding"];
+        headers["content-length"] = String(Buffer.byteLength(body));
+        headers.etag = `"${sha256Hex(Buffer.from(body))}"`;
+        await route.fulfill({
+          status: response.status(),
+          headers,
+          body,
+        });
+      },
+    );
     page.on("request", (request) => {
       const url = new URL(request.url());
       if (url.protocol.startsWith("http") && url.origin !== webOrigin) {
@@ -507,6 +546,13 @@ test.describe("dependency graph candidate stack", () => {
     await expect(workspace).toContainText(fixture.app.version);
     await expect(workspace).toContainText("graph-core");
     await expect(workspace).toContainText("graph-util");
+    await expect(workspace).toContainText(maliciousLabel);
+    await expect(workspace.locator("[data-zed-e2e-graph-xss]")).toHaveCount(0);
+    expect(
+      await page.evaluate(() =>
+        Reflect.get(window, "__zedGraphXss") === true,
+      ),
+    ).toBe(false);
 
     await page.evaluate(() => {
       location.hash = "dependency-graph=graph-e2e%2Fgraph-core";

@@ -20,10 +20,9 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-  # Exact immutable commits reachable from each production `main` branch.
-  # Fixed SHAs keep every certification run independent of moving branches.
-  # The API also consumes the additive binary-artifact contract. The other
-  # graph consumers intentionally remain on its canonical graph-contract parent.
+  # Exact canonical merge commits. The API consumes the additive binary
+  # artifact child; graph consumers intentionally pin its graph-contract
+  # parent. Immutable SHAs keep the final run independent of moving branches.
   ZED_INTERFACES_CANDIDATE: 4b87e425b04777b0ee413971dc1df805d24f295f
   ZED_GRAPH_INTERFACES_CANDIDATE: 7d31f80dd8a310f218931165a3ad636a2f32b932
   ZED_LIB_CORE_CANDIDATE: c3d486a1519381276fbec02aa25247f542924443
@@ -40,47 +39,47 @@ jobs:
 
     steps:
       - name: Checkout E2E candidate
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: zed-e2e
 
       - name: Checkout zed-interfaces candidate
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-interfaces
           ref: ${{ env.ZED_INTERFACES_CANDIDATE }}
           path: zed-interfaces
 
       - name: Checkout zed-api-server candidate
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-api-server.rs
           ref: ${{ env.ZED_API_CANDIDATE }}
           path: zed-api-server.rs
 
       - name: Checkout zed-lib-core candidate
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-lib-core
           ref: ${{ env.ZED_LIB_CORE_CANDIDATE }}
           path: zed-lib-core
 
       - name: Checkout zed-web-server candidate
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-web-server.rs
           ref: ${{ env.ZED_WEB_CANDIDATE }}
           path: zed-web-server.rs
 
       - name: Checkout zed-cli candidate
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-cli
           ref: ${{ env.ZED_CLI_CANDIDATE }}
           path: zed-cli
 
       - name: Checkout zed-clients candidate
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-clients
           ref: ${{ env.ZED_CLIENTS_CANDIDATE }}
@@ -133,10 +132,10 @@ jobs:
           PY
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
 
       - name: Cache Rust builds
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
           workspaces: |
             zed-api-server.rs
@@ -145,7 +144,7 @@ jobs:
           shared-key: dependency-graph-candidate
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
@@ -219,7 +218,7 @@ jobs:
 
       - name: Upload browser evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dependency-graph-candidate-${{ github.run_id }}
           path: |

@@ -181,9 +181,26 @@ async function startPostgres(): Promise<void> {
 
 async function buildServers(): Promise<void> {
   // Debug profile: fast to build, plenty fast to serve e2e traffic.
-  await sh("cargo", ["build", "--bin", "zed-api-server"], { cwd: API_REPO });
-  await sh("cargo", ["build", "--bin", "zed-web-server"], { cwd: WEB_REPO });
-  await sh("cargo", ["build", "--bin", "zed"], { cwd: CLI_REPO });
+  await sh("cargo", ["build", "--locked", "--bin", "zed-api-server"], { cwd: API_REPO });
+  await sh("cargo", ["build", "--locked", "--bin", "zed-web-server"], { cwd: WEB_REPO });
+  await sh("cargo", ["build", "--locked", "--bin", "zed"], { cwd: CLI_REPO });
+}
+
+/**
+ * Apply the exact API candidate's legacy and canonical migrations before any
+ * long-running process starts. Production deliberately defaults
+ * `AUTO_MIGRATE` to false; the E2E harness follows the same one-shot job model
+ * so it cannot accidentally certify a development-only startup path.
+ */
+async function migrateDatabase(): Promise<void> {
+  await sh(path.join(API_REPO, "target/debug/zed-api-server"), ["migrate"], {
+    cwd: API_REPO,
+    env: {
+      DATABASE_URL,
+      AUTO_MIGRATE: "false",
+      DB_CONNECT_MAX_WAIT_SECS: "30",
+    },
+  });
 }
 
 function spawnLogged(name: string, bin: string, args: string[], env: NodeJS.ProcessEnv, cwd: string): ChildProcess {
@@ -261,6 +278,7 @@ async function portFreesUp(port: number, timeoutMs = 2_000): Promise<boolean> {
 async function bootStack(artifactsDir: string): Promise<Stack> {
   await startPostgres();
   await buildServers();
+  await migrateDatabase();
 
   const storageBackend = process.env.ZED_E2E_STORAGE_BACKEND ?? "local";
   if (storageBackend !== "local" && storageBackend !== "memory" && storageBackend !== "s3") {

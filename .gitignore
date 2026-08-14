@@ -3,6 +3,8 @@ test-results/
 playwright-report/
 .stack/
 *.log
+__pycache__/
+*.py[cod]
 
 # Local secrets. Credentials enter this repo only as sops ciphertext under
 # env/enc/*.env.enc. Plaintext never gets committed.

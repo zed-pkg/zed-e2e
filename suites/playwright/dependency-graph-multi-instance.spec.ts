@@ -179,13 +179,18 @@ test.describe("dependency graph reusable component certification", () => {
       first.after(second);
     });
 
+    const reconnectedGraph = graphs.nth(1);
     await expect(graphs).toHaveCount(2);
-    await expect(graphs.nth(1)).toHaveAttribute("data-ready", "true");
+    await expect(reconnectedGraph).toHaveAttribute("data-ready", "true");
     await expect(
-      graphs.nth(1).getByRole("group", {
+      reconnectedGraph.getByRole("group", {
         name: /interactive package dependency graph/i,
       }),
     ).toBeVisible({ timeout: 20_000 });
+    await expect(reconnectedGraph.locator(".dg-node").first()).toBeVisible();
+    await expect
+      .poll(async () => reconnectedGraph.locator(".dg-edge").count())
+      .toBeGreaterThan(0);
 
     const reconnected = await identitySnapshot(page);
     expect(reconnected.duplicateIds).toEqual([]);

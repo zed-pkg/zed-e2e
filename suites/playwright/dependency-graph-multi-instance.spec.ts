@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { ensureDependencyGraphSeeded } from "../../harness/graph-fixtures.js";
 import { WEB_URL } from "../../harness/stack.js";
@@ -18,7 +18,7 @@ interface PageIdentitySnapshot {
   readonly graphs: readonly GraphIdentitySnapshot[];
 }
 
-async function identitySnapshot(page: Parameters<typeof test>[0]["page"]): Promise<PageIdentitySnapshot> {
+async function identitySnapshot(page: Page): Promise<PageIdentitySnapshot> {
   return page.evaluate(() => {
     const graphs = Array.from(
       document.querySelectorAll<HTMLElement>("zed-dependency-graph"),

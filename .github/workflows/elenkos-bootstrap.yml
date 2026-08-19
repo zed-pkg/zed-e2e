@@ -1,0 +1,106 @@
+name: bootstrap Elenkos repositories
+
+on:
+  push:
+    branches:
+      - agent/elenkos-bootstrap
+    paths:
+      - .github/workflows/elenkos-bootstrap.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: elenkos-repository-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  create-repositories:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.SYNC_FLEET_TOKEN }}
+    steps:
+      - name: Require encrypted organization credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN:-}" || {
+            echo 'SYNC_FLEET_TOKEN is not configured for this repository' >&2
+            exit 1
+          }
+          gh api user --jq '.login' >/dev/null
+
+      - name: Create production and test repositories idempotently
+        shell: bash
+        run: |
+          set -uo pipefail
+          repos=(
+            elenkos-sync
+            elenkos-lib-core
+            elenkos-monorepo
+            elenkos-web-server.rs
+            elenkos-api-server.rs
+            elenkos-flutter
+            elenkos-desktop-app.rs
+            elenkos-infra
+            elenkos-clients
+            elenkos-interfaces
+            elenkos-cli
+          )
+          orgs=(elenkos-systems elenkos-systems-test)
+          failures=0
+
+          description_for() {
+            case "$1" in
+              elenkos-sync) echo 'Offline-first Elenkos synchronization wrapper around opto-sync' ;;
+              elenkos-lib-core) echo 'Canonical domain, database, scoring, embeddings, and SeaORM core for Elenkos' ;;
+              elenkos-monorepo) echo 'Application composition and pinned submodule manifest for Elenkos' ;;
+              elenkos-web-server.rs) echo 'Rust Leptos web application for blind QA review and bug qualification' ;;
+              elenkos-api-server.rs) echo 'Rust SeaORM JSON API for bug reports, reviews, embeddings, impact, and credits' ;;
+              elenkos-flutter) echo 'Flutter mobile and desktop client for Elenkos QA workflows' ;;
+              elenkos-desktop-app.rs) echo 'Native Rust desktop client for Elenkos QA engineers' ;;
+              elenkos-infra) echo 'GitOps, Kubernetes, PostgreSQL, CockroachDB, and observability infrastructure' ;;
+              elenkos-clients) echo 'Generated and hand-written Elenkos SDK clients' ;;
+              elenkos-interfaces) echo 'Versioned JSON Schema, OpenAPI, events, and database contracts for Elenkos' ;;
+              elenkos-cli) echo 'Zed-managed command-line workflows for Elenkos reporters, reviewers, and operators' ;;
+            esac
+          }
+
+          for org in "${orgs[@]}"; do
+            for repo in "${repos[@]}"; do
+              if gh api "repos/${org}/${repo}" >/dev/null 2>&1; then
+                echo "exists: ${org}/${repo}"
+                continue
+              fi
+
+              description="$(description_for "$repo")"
+              if gh api --method POST "orgs/${org}/repos" \
+                -f name="$repo" \
+                -f description="$description" \
+                -F private=true \
+                -F auto_init=true \
+                -F has_issues=true \
+                -F has_projects=false \
+                -F has_wiki=false \
+                -F allow_squash_merge=true \
+                -F allow_merge_commit=false \
+                -F allow_rebase_merge=true \
+                -F delete_branch_on_merge=true \
+                --silent; then
+                echo "created: ${org}/${repo}"
+                gh api --method PUT "repos/${org}/${repo}/topics" \
+                  -f 'names[]=elenkos' \
+                  -f 'names[]=quality-assurance' \
+                  -f 'names[]=rust' \
+                  -f 'names[]=zed-pkg' \
+                  --silent || true
+              else
+                echo "failed: ${org}/${repo}" >&2
+                failures=1
+              fi
+            done
+          done
+
+          exit "$failures"

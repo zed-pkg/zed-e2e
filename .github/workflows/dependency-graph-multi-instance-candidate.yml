@@ -1,0 +1,189 @@
+name: Dependency graph multi-instance candidate
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/dependency-graph-multi-instance-candidate.yml"
+      - "playwright.graph-multi-instance.config.ts"
+      - "suites/playwright/dependency-graph-multi-instance.spec.ts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-graph-multi-instance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  ZED_API_CANDIDATE: 7e280f7d6a23432b5414ffeb591ca77737b1ce37
+  ZED_WEB_CANDIDATE: 5b486e1b6956ef63ef49f6391dbec13274b8165d
+  ZED_CLI_CANDIDATE: 3265041478d6873ce3815b11930bd1e8e8004837
+  ZED_API_INTERFACES_SHA: 4b87e425b04777b0ee413971dc1df805d24f295f
+  ZED_API_CORE_SHA: c3d486a1519381276fbec02aa25247f542924443
+  ZED_WEB_INTERFACES_SHA: 7d31f80dd8a310f218931165a3ad636a2f32b932
+  ZED_WEB_CORE_SHA: 34333b5ea5c0ee7862bfe0366fe9fa2b1c4bd210
+
+jobs:
+  multi-instance:
+    name: PostgreSQL + API + web + Chromium/Firefox/WebKit
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+
+    steps:
+      - name: Checkout E2E candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: zed-e2e
+          persist-credentials: false
+
+      - name: Checkout API candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-api-server.rs
+          ref: ${{ env.ZED_API_CANDIDATE }}
+          path: zed-api-server.rs
+          persist-credentials: false
+
+      - name: Checkout web candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-web-server.rs
+          ref: ${{ env.ZED_WEB_CANDIDATE }}
+          path: zed-web-server.rs
+          persist-credentials: false
+
+      - name: Checkout CLI candidate required by the shared stack harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_CANDIDATE }}
+          path: zed-cli
+          persist-credentials: false
+
+      - name: Verify immutable composition and cross-repository pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C zed-e2e rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C zed-api-server.rs rev-parse HEAD)" = "$ZED_API_CANDIDATE"
+          test "$(git -C zed-web-server.rs rev-parse HEAD)" = "$ZED_WEB_CANDIDATE"
+          test "$(git -C zed-cli rev-parse HEAD)" = "$ZED_CLI_CANDIDATE"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          expected = {
+              "zed-api-server.rs/Cargo.toml": [
+                  os.environ["ZED_API_INTERFACES_SHA"],
+                  os.environ["ZED_API_CORE_SHA"],
+              ],
+              "zed-api-server.rs/Cargo.lock": [
+                  os.environ["ZED_API_INTERFACES_SHA"],
+                  os.environ["ZED_API_CORE_SHA"],
+              ],
+              "zed-web-server.rs/Cargo.toml": [
+                  os.environ["ZED_WEB_INTERFACES_SHA"],
+                  os.environ["ZED_WEB_CORE_SHA"],
+              ],
+              "zed-web-server.rs/Cargo.lock": [
+                  os.environ["ZED_WEB_INTERFACES_SHA"],
+                  os.environ["ZED_WEB_CORE_SHA"],
+              ],
+          }
+          for filename, revisions in expected.items():
+              content = Path(filename).read_text()
+              for revision in revisions:
+                  if revision not in content:
+                      raise SystemExit(f"{filename} does not pin {revision}")
+          PY
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          workspaces: |
+            zed-api-server.rs
+            zed-web-server.rs
+            zed-cli
+          shared-key: dependency-graph-multi-instance
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: zed-e2e/package-lock.json
+
+      - name: Install E2E dependencies
+        working-directory: zed-e2e
+        run: npm ci
+
+      - name: Install Chromium, Firefox, and WebKit
+        working-directory: zed-e2e
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Type-check browser test and harness
+        working-directory: zed-e2e
+        run: npm run typecheck
+
+      - name: Run harness unit tests
+        working-directory: zed-e2e
+        run: npm run test:harness
+
+      - name: Boot immutable candidate stack on allocated ports
+        working-directory: zed-e2e
+        env:
+          ZED_E2E_STORAGE_BACKEND: memory
+          ZED_E2E_ARTIFACT_SERVE_MEMORY_BUDGET_BYTES: "16777216"
+          ZED_E2E_MAX_ARTIFACT_BYTES: "8388608"
+        run: >-
+          node scripts/allocate-stack-ports.mjs
+          --github-env "$GITHUB_ENV"
+          -- npm run stack:up
+
+      - name: Certify two independent graph components in all browser engines
+        working-directory: zed-e2e
+        env:
+          ZED_E2E_DEPENDENCY_GRAPH_CANDIDATE: "1"
+          ZED_E2E_EXTERNAL_STACK: "1"
+          ZED_E2E_STORAGE_BACKEND: memory
+          ZED_E2E_ARTIFACT_SERVE_MEMORY_BUDGET_BYTES: "16777216"
+          ZED_E2E_MAX_ARTIFACT_BYTES: "8388608"
+        run: >-
+          npx playwright test
+          suites/playwright/dependency-graph-multi-instance.spec.ts
+          --config=playwright.graph-multi-instance.config.ts
+          --workers=1
+
+      - name: Print stack diagnostics
+        if: failure()
+        working-directory: zed-e2e
+        run: |
+          echo "API URL: ${ZED_E2E_API_URL:-unset}"
+          echo "Web URL: ${ZED_E2E_WEB_URL:-unset}"
+          find .stack .e2e-state -maxdepth 2 -type f \( -name '*.log' -o -name '*.pid' \) -print -exec tail -n 250 {} \; 2>/dev/null || true
+
+      - name: Stop candidate stack
+        if: always()
+        working-directory: zed-e2e
+        env:
+          ZED_E2E_EXTERNAL_STACK: ""
+        run: npm run stack:down || true
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-graph-multi-instance-${{ github.run_id }}
+          path: |
+            zed-e2e/playwright-report
+            zed-e2e/test-results
+            zed-e2e/.stack/*.log
+            zed-e2e/.e2e-state/*.log
+          if-no-files-found: ignore
+          retention-days: 14

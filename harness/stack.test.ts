@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 
-import { isStillOurProcess } from "./stack.js";
+import { isStillOurProcess, setPackageVisibilityForTest } from "./stack.js";
 
 test("a live process is recognized by its own binary path", () => {
   // This test process is node; execPath is exactly what `ps -o args=` shows.
@@ -39,4 +39,15 @@ test("nonsense pids are rejected rather than signalled", () => {
   for (const pid of [0, -1, 2 ** 31]) {
     assert.equal(isStillOurProcess(pid, process.execPath), false, `pid ${pid}`);
   }
+});
+
+test("private graph fixture SQL rejects unbounded identifiers before execution", async () => {
+  await assert.rejects(
+    setPackageVisibilityForTest("../another-org", "package", "private"),
+    /unsafe test organization slug/,
+  );
+  await assert.rejects(
+    setPackageVisibilityForTest("safe-org", "package'; drop table zed_packages; --", "private"),
+    /unsafe test package name/,
+  );
 });

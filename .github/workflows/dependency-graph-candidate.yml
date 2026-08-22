@@ -8,6 +8,10 @@ on:
       - "harness/stack.ts"
       - "suites/playwright/dependency-graph.spec.ts"
       - "suites/playwright/dependency-graph-projection.spec.ts"
+      - "suites/playwright/dependency-graph-matrix.spec.ts"
+      - "suites/playwright/dependency-graph-private.spec.ts"
+      - "suites/playwright/dependency-graph-multi-instance.spec.ts"
+      - "playwright.graph-multi-instance.config.ts"
   workflow_dispatch:
 
 permissions:
@@ -26,16 +30,17 @@ env:
   ZED_INTERFACES_CANDIDATE: 4b87e425b04777b0ee413971dc1df805d24f295f
   ZED_GRAPH_INTERFACES_CANDIDATE: 7d31f80dd8a310f218931165a3ad636a2f32b932
   ZED_LIB_CORE_CANDIDATE: c3d486a1519381276fbec02aa25247f542924443
+  ZED_WEB_CORE_CANDIDATE: 34333b5ea5c0ee7862bfe0366fe9fa2b1c4bd210
   ZED_API_CANDIDATE: 7e280f7d6a23432b5414ffeb591ca77737b1ce37
-  ZED_WEB_CANDIDATE: efa3a08a44fb3fa06b440d2547ec6672963ca328
+  ZED_WEB_CANDIDATE: 4d9d7f03e12b6d0ffdb741c945a388ec0a912403
   ZED_CLI_CANDIDATE: 3265041478d6873ce3815b11930bd1e8e8004837
   ZED_CLIENTS_CANDIDATE: 799c967f44fdd7932d18432257a2bd46eff4e33a
 
 jobs:
   graph-candidate:
-    name: PostgreSQL + API + web + CLI + TypeScript client + Chromium
+    name: PostgreSQL + API + web + CLI + client + Chromium/Firefox/WebKit
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 80
 
     steps:
       - name: Checkout E2E candidate
@@ -114,12 +119,13 @@ jobs:
           graph_interfaces = os.environ["ZED_GRAPH_INTERFACES_CANDIDATE"]
           api_interfaces = os.environ["ZED_INTERFACES_CANDIDATE"]
           core = os.environ["ZED_LIB_CORE_CANDIDATE"]
+          web_core = os.environ["ZED_WEB_CORE_CANDIDATE"]
           required_pins = {
               "zed-lib-core/src/rust-orm/Cargo.toml": [graph_interfaces],
               "zed-api-server.rs/Cargo.toml": [api_interfaces, core],
               "zed-api-server.rs/Cargo.lock": [api_interfaces, core],
-              "zed-web-server.rs/Cargo.toml": [graph_interfaces, core],
-              "zed-web-server.rs/Cargo.lock": [graph_interfaces, core],
+              "zed-web-server.rs/Cargo.toml": [graph_interfaces, web_core],
+              "zed-web-server.rs/Cargo.lock": [graph_interfaces, web_core],
               "zed-cli/Cargo.toml": [graph_interfaces],
               "zed-cli/Cargo.lock": [graph_interfaces],
               "zed-clients/.github/workflows/ci.yml": [graph_interfaces],
@@ -162,9 +168,9 @@ jobs:
           ZED_INTERFACES_FORMAT_FIXTURE: ${{ github.workspace }}/zed-interfaces/fixtures/dependency-graph-formats-v1.json
         run: npm ci && npm run build && npm test
 
-      - name: Install Chromium
+      - name: Install Chromium, Firefox, and WebKit
         working-directory: zed-e2e
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Type-check graph tests and harness
         working-directory: zed-e2e
@@ -198,7 +204,10 @@ jobs:
           npx playwright test
           suites/playwright/dependency-graph.spec.ts
           suites/playwright/dependency-graph-projection.spec.ts
-          --project=chromium
+          suites/playwright/dependency-graph-multi-instance.spec.ts
+          suites/playwright/dependency-graph-matrix.spec.ts
+          suites/playwright/dependency-graph-private.spec.ts
+          --config=playwright.graph-multi-instance.config.ts
           --workers=1
 
       - name: Print stack diagnostics

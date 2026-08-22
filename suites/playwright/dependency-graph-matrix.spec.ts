@@ -336,6 +336,7 @@ test.describe("dependency graph fixture, accessibility, and performance matrix",
     await workspace.getByRole("searchbox", { name: "Find package" }).fill("optional");
     await workspace.locator('.dg-node[aria-label*="optional-dependency"]').click();
     await workspace.getByRole("button", { name: "Reverse impact", exact: true }).click();
+    await workspace.getByText("Edge filters", { exact: true }).click();
     await workspace.getByLabel("Optional edges").uncheck();
     await workspace.getByRole("button", { name: "Save view", exact: true }).click();
 

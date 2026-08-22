@@ -18,6 +18,7 @@
  *   ZED_E2E_KEEP=1                    -- leave the stack up after the run.
  */
 import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { createHmac, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { execFileSync } from "node:child_process";
 import {
@@ -69,6 +70,11 @@ const WEB_PORT = port("ZED_E2E_WEB_PORT", 48081);
 export const DATABASE_URL = `postgres://zed:zed@127.0.0.1:${PG_PORT}/zed_e2e`;
 export const API_URL = process.env.ZED_E2E_API_URL ?? `http://127.0.0.1:${API_PORT}`;
 export const WEB_URL = process.env.ZED_E2E_WEB_URL ?? `http://127.0.0.1:${WEB_PORT}`;
+
+const E2E_SESSION_SIGNING_SECRET =
+  process.env.ZED_E2E_SESSION_SIGNING_SECRET ??
+  "zed-e2e-browser-session-signing-secret-v1";
+const E2E_SESSION_COOKIE_NAME = "zpkg_session";
 
 const STATE_DIR = path.join(E2E_ROOT, ".stack");
 const externalStack = Boolean(process.env.ZED_E2E_API_URL);
@@ -322,7 +328,19 @@ async function bootStack(artifactsDir: string): Promise<Stack> {
   webProc = spawnLogged("web", path.join(WEB_REPO, "target/debug/zed-web-server"), [], {
     DATABASE_URL,
     BIND_ADDR: `127.0.0.1:${WEB_PORT}`,
+    PUBLIC_BASE_URL: WEB_URL,
     PUBLIC_REGISTRY_URL: API_URL,
+    ZED_API_URL: API_URL,
+    // Browser membership tests use a locally signed product cookie and the
+    // canonical PostgreSQL user projection. The aggregate pages never call
+    // Shared Auth, but enabling the production verifier here ensures the test
+    // exercises the same cookie boundary. Port 9 is deliberately inert so an
+    // accidental token refresh fails closed instead of reaching another
+    // service on the runner.
+    SHARED_AUTH_URL: "http://127.0.0.1:9",
+    SHARED_AUTH_PUBLIC_URL: "http://127.0.0.1:9",
+    SHARED_AUTH_HANDOFF_CLIENT_SECRET: "zed-e2e-unused-handoff-secret",
+    ZED_SESSION_SIGNING_SECRET: E2E_SESSION_SIGNING_SECRET,
     RUST_LOG: "info",
   }, WEB_REPO);
 
@@ -359,35 +377,176 @@ export async function createAdminToken(name: string): Promise<string> {
  * read policy must also be exercised against canonical private rows. The
  * product API does not let machine tokens create private account packages, so
  * the isolated E2E database is adjusted directly after a real publish. Inputs
- * are strictly bounded before being passed as quoted psql variables.
+ * are strictly bounded and SQL-quoted before execution.
  */
 export async function setPackageVisibilityForTest(
   org: string,
   name: string,
   visibility: "public" | "internal" | "private",
 ): Promise<void> {
-  if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(org)) {
-    throw new Error(`unsafe test organization slug ${JSON.stringify(org)}`);
-  }
-  if (!/^[a-z0-9][a-z0-9._-]{0,127}$/.test(name)) {
-    throw new Error(`unsafe test package name ${JSON.stringify(name)}`);
+  assertSafeOrganizationSlug(org);
+  assertSafePackageName(name);
+  if (!["public", "internal", "private"].includes(visibility)) {
+    throw new Error(`unsafe test visibility ${JSON.stringify(visibility)}`);
   }
   const sql = `
     with changed as (
       update zed_packages as package
-         set visibility = :'visibility',
+         set visibility = ${sqlText(visibility)},
              visibility_changed_at = now(),
              updated_at = now()
         from zed_orgs as organization
        where package.org_id = organization.id
-         and organization.slug = :'org'
-         and package.name = :'name'
+         and organization.slug = ${sqlText(org)}
+         and package.name = ${sqlText(name)}
          and package.is_soft_deleted = false
       returning package.id
     )
     select count(*) from changed;
   `;
-  const { stdout } = await sh("docker", [
+  const { stdout } = await runFixtureSql(sql);
+  if (stdout.trim() !== "1") {
+    throw new Error(`visibility fixture expected one package row, changed ${stdout.trim() || "none"}`);
+  }
+}
+
+export interface BrowserSessionFixture {
+  readonly subject: string;
+  readonly cookieName: string;
+  readonly cookieValue: string;
+}
+
+/**
+ * Create one canonical customer user and organization membership, then return
+ * the exact HMAC-protected product cookie accepted by the Rust web tier.
+ *
+ * This is intentionally a database fixture rather than a Shared Auth mock:
+ * aggregate page reads resolve only the opaque principal id through the
+ * read-only ORM boundary, so no bearer token or auth-provider behavior is
+ * involved in the authorization decision under test.
+ */
+export async function createBrowserOrgMemberForTest(
+  org: string,
+  role: "owner" | "admin" | "member" | "reader" = "reader",
+): Promise<BrowserSessionFixture> {
+  assertSafeOrganizationSlug(org);
+  const subject = randomUUID();
+  const userId = randomUUID();
+  const sql = `
+    with target_org as (
+      select id
+        from zed_orgs
+       where slug = ${sqlText(org)}
+         and is_soft_deleted = false
+    ), inserted_user as (
+      insert into zed_users (id, shared_auth_subject, auth_realm, display_name)
+      select ${sqlText(userId)}::uuid, ${sqlText(subject)}::uuid, 'customer', 'E2E organization member'
+        from target_org
+      returning id
+    ), inserted_membership as (
+      insert into zed_org_members (org_id, user_id, role)
+      select target_org.id, inserted_user.id, ${sqlText(role)}
+        from target_org
+        cross join inserted_user
+      returning 1
+    )
+    select count(*) from inserted_membership;
+  `;
+  const { stdout } = await runFixtureSql(sql);
+  if (stdout.trim() !== "1") {
+    throw new Error(`organization membership fixture expected one row, inserted ${stdout.trim() || "none"}`);
+  }
+  return browserSessionFixture(subject);
+}
+
+/**
+ * Create a private project, attach the named real API-published packages, and
+ * grant a user direct project membership without organization membership.
+ */
+export async function createBrowserProjectMemberForTest(
+  org: string,
+  project: string,
+  packageNames: readonly string[],
+): Promise<BrowserSessionFixture> {
+  assertSafeOrganizationSlug(org);
+  if (!/^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/.test(project)) {
+    throw new Error(`unsafe test project slug ${JSON.stringify(project)}`);
+  }
+  if (packageNames.length === 0 || packageNames.length > 16) {
+    throw new Error("project fixture requires 1-16 package names");
+  }
+  for (const name of packageNames) assertSafePackageName(name);
+  if (new Set(packageNames).size !== packageNames.length) {
+    throw new Error("project fixture package names must be unique");
+  }
+
+  const subject = randomUUID();
+  const userId = randomUUID();
+  const projectId = randomUUID();
+  const sql = `
+    with target_org as (
+      select id
+        from zed_orgs
+       where slug = ${sqlText(org)}
+         and is_soft_deleted = false
+    ), inserted_user as (
+      insert into zed_users (id, shared_auth_subject, auth_realm, display_name)
+      select ${sqlText(userId)}::uuid, ${sqlText(subject)}::uuid, 'customer', 'E2E direct project member'
+        from target_org
+      returning id
+    ), inserted_project as (
+      insert into zed_projects (id, org_id, slug, name, visibility)
+      select ${sqlText(projectId)}::uuid, target_org.id, ${sqlText(project)}, 'E2E dependency graph project', 'private'
+        from target_org
+      returning id, org_id
+    ), inserted_membership as (
+      insert into zed_project_members (project_id, user_id, role)
+      select inserted_project.id, inserted_user.id, 'reader'
+        from inserted_project
+        cross join inserted_user
+      returning 1
+    ), assigned_packages as (
+      update zed_packages as package
+         set project_id = inserted_project.id,
+             updated_at = now()
+        from inserted_project
+       where package.org_id = inserted_project.org_id
+         and package.name = any(string_to_array(${sqlText(packageNames.join(","))}, ','))
+         and package.is_soft_deleted = false
+      returning 1
+    )
+    select
+      (select count(*) from inserted_project) || ':' ||
+      (select count(*) from inserted_membership) || ':' ||
+      (select count(*) from assigned_packages);
+  `;
+  const { stdout } = await runFixtureSql(sql);
+  const expected = `1:1:${packageNames.length}`;
+  if (stdout.trim() !== expected) {
+    throw new Error(`project membership fixture expected ${expected}, inserted ${stdout.trim() || "none"}`);
+  }
+  return browserSessionFixture(subject);
+}
+
+function assertSafeOrganizationSlug(org: string): void {
+  if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(org)) {
+    throw new Error(`unsafe test organization slug ${JSON.stringify(org)}`);
+  }
+}
+
+function assertSafePackageName(name: string): void {
+  if (!/^[a-z0-9][a-z0-9._-]{0,127}$/.test(name)) {
+    throw new Error(`unsafe test package name ${JSON.stringify(name)}`);
+  }
+}
+
+function sqlText(value: string): string {
+  if (value.includes("\0")) throw new Error("test SQL values cannot contain NUL bytes");
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+async function runFixtureSql(sql: string): Promise<{ stdout: string }> {
+  return sh("docker", [
     "exec",
     PG_CONTAINER,
     "psql",
@@ -397,19 +556,26 @@ export async function setPackageVisibilityForTest(
     "zed_e2e",
     "-v",
     "ON_ERROR_STOP=1",
-    "-v",
-    `org=${org}`,
-    "-v",
-    `name=${name}`,
-    "-v",
-    `visibility=${visibility}`,
     "-Atq",
     "-c",
     sql,
   ]);
-  if (stdout.trim() !== "1") {
-    throw new Error(`visibility fixture expected one package row, changed ${stdout.trim() || "none"}`);
-  }
+}
+
+function browserSessionFixture(subject: string): BrowserSessionFixture {
+  const payload = Buffer.from(JSON.stringify({
+    refresh_token: `e2e_${randomUUID().replaceAll("-", "")}`,
+    shared_user_id: subject,
+    issued_at: Math.floor(Date.now() / 1000),
+  })).toString("hex");
+  const signature = createHmac("sha256", E2E_SESSION_SIGNING_SECRET)
+    .update(payload)
+    .digest("hex");
+  return {
+    subject,
+    cookieName: E2E_SESSION_COOKIE_NAME,
+    cookieValue: `${payload}.${signature}`,
+  };
 }
 
 async function mintToken(args: string[]): Promise<string> {

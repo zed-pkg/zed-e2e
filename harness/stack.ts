@@ -352,6 +352,66 @@ export async function createAdminToken(name: string): Promise<string> {
   return mintToken(["create-token", "--name", name]);
 }
 
+/**
+ * Test-fixture-only visibility transition for authorization certification.
+ *
+ * Machine publication intentionally creates public packages, while the graph
+ * read policy must also be exercised against canonical private rows. The
+ * product API does not let machine tokens create private account packages, so
+ * the isolated E2E database is adjusted directly after a real publish. Inputs
+ * are strictly bounded before being passed as quoted psql variables.
+ */
+export async function setPackageVisibilityForTest(
+  org: string,
+  name: string,
+  visibility: "public" | "internal" | "private",
+): Promise<void> {
+  if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(org)) {
+    throw new Error(`unsafe test organization slug ${JSON.stringify(org)}`);
+  }
+  if (!/^[a-z0-9][a-z0-9._-]{0,127}$/.test(name)) {
+    throw new Error(`unsafe test package name ${JSON.stringify(name)}`);
+  }
+  const sql = `
+    with changed as (
+      update zed_packages as package
+         set visibility = :'visibility',
+             visibility_changed_at = now(),
+             updated_at = now()
+        from zed_orgs as organization
+       where package.org_id = organization.id
+         and organization.slug = :'org'
+         and package.name = :'name'
+         and package.is_soft_deleted = false
+      returning package.id
+    )
+    select count(*) from changed;
+  `;
+  const { stdout } = await sh("docker", [
+    "exec",
+    PG_CONTAINER,
+    "psql",
+    "-U",
+    "zed",
+    "-d",
+    "zed_e2e",
+    "-v",
+    "ON_ERROR_STOP=1",
+    "-v",
+    `org=${org}`,
+    "-v",
+    `name=${name}`,
+    "-v",
+    `visibility=${visibility}`,
+    "-Atq",
+    "-c",
+    sql,
+  ]);
+  if (stdout.trim() !== "1") {
+    throw new Error(`visibility fixture expected one package row, changed ${stdout.trim() || "none"}`);
+  }
+}
+
 async function mintToken(args: string[]): Promise<string> {
   const bin = path.join(API_REPO, "target/debug/zed-api-server");
   const { stdout } = await sh(bin, args, {

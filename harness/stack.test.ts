@@ -10,8 +10,8 @@ import { once } from "node:events";
 import {
   createBrowserOrgMemberForTest,
   createBrowserProjectMemberForTest,
+  createPrivatePackageForTest,
   isStillOurProcess,
-  setPackageVisibilityForTest,
 } from "./stack.js";
 
 test("a live process is recognized by its own binary path", () => {
@@ -48,11 +48,11 @@ test("nonsense pids are rejected rather than signalled", () => {
 
 test("private graph fixture SQL rejects unbounded identifiers before execution", async () => {
   await assert.rejects(
-    setPackageVisibilityForTest("../another-org", "package", "private"),
+    createPrivatePackageForTest("../another-org", "package"),
     /unsafe test organization slug/,
   );
   await assert.rejects(
-    setPackageVisibilityForTest("safe-org", "package'; drop table zed_packages; --", "private"),
+    createPrivatePackageForTest("safe-org", "package'; drop table zed_packages; --"),
     /unsafe test package name/,
   );
 });

@@ -8,8 +8,8 @@ import {
   createAdminToken,
   createBrowserOrgMemberForTest,
   createBrowserProjectMemberForTest,
+  createPrivatePackageForTest,
   createToken,
-  setPackageVisibilityForTest,
 } from "../../harness/stack.js";
 
 interface PrivateFixture {
@@ -118,6 +118,7 @@ test.describe("private dependency graph tenant isolation", () => {
     const ownerToken = await createToken(`${org}-owner`, org);
     const otherOrgToken = await createToken(`${otherOrg}-owner`, otherOrg);
     const unscopedAdminToken = await createAdminToken(`graph-admin-${suffix}`);
+    await createPrivatePackageForTest(org, name);
     await publishFixture(
       { org, name, version, description: "Private dependency graph isolation fixture" },
       { token: ownerToken },
@@ -126,7 +127,6 @@ test.describe("private dependency graph tenant isolation", () => {
       { org, name: publicName, version, description: "Public dependency graph aggregate fixture" },
       { token: ownerToken },
     );
-    await setPackageVisibilityForTest(org, name, "private");
     const orgMember = await createBrowserOrgMemberForTest(org);
     const otherOrgMember = await createBrowserOrgMemberForTest(otherOrg);
     const projectMember = await createBrowserProjectMemberForTest(

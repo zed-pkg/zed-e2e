@@ -371,42 +371,62 @@ export async function createAdminToken(name: string): Promise<string> {
 }
 
 /**
- * Test-fixture-only visibility transition for authorization certification.
+ * Pre-create one canonical private package for authorization certification.
  *
- * Machine publication intentionally creates public packages, while the graph
- * read policy must also be exercised against canonical private rows. The
- * product API does not let machine tokens create private account packages, so
- * the isolated E2E database is adjusted directly after a real publish. Inputs
- * are strictly bounded and SQL-quoted before execution.
+ * A first machine publication intentionally creates a public canonical
+ * package, and the database correctly forbids making public bytes private
+ * afterward. The canonical publication seam explicitly preserves an existing
+ * private package, so this fixture establishes that initial account-owned row
+ * before the real API publish instead of disabling or bypassing the visibility
+ * trigger.
  */
-export async function setPackageVisibilityForTest(
+export async function createPrivatePackageForTest(
   org: string,
   name: string,
-  visibility: "public" | "internal" | "private",
 ): Promise<void> {
   assertSafeOrganizationSlug(org);
   assertSafePackageName(name);
-  if (!["public", "internal", "private"].includes(visibility)) {
-    throw new Error(`unsafe test visibility ${JSON.stringify(visibility)}`);
-  }
   const sql = `
-    with changed as (
-      update zed_packages as package
-         set visibility = ${sqlText(visibility)},
-             visibility_changed_at = now(),
-             updated_at = now()
-        from zed_orgs as organization
-       where package.org_id = organization.id
-         and organization.slug = ${sqlText(org)}
-         and package.name = ${sqlText(name)}
-         and package.is_soft_deleted = false
-      returning package.id
+    with existing_org as (
+      select id
+        from zed_orgs
+       where slug = ${sqlText(org)}
+         and is_soft_deleted = false
+    ), inserted_org as (
+      insert into zed_orgs (slug, name, settings)
+      select ${sqlText(org)}, ${sqlText(org)}, '{"fixture":"dependency-graph-private"}'::jsonb
+       where not exists (select 1 from existing_org)
+      returning id
+    ), target_org as (
+      select id from existing_org
+      union all
+      select id from inserted_org
+    ), inserted_package as (
+      insert into zed_packages (
+        org_id,
+        name,
+        description,
+        visibility,
+        vcs,
+        repo_url,
+        config
+      )
+      select
+        target_org.id,
+        ${sqlText(name)},
+        'Private dependency graph isolation fixture',
+        'private',
+        'git',
+        '',
+        '{"fixture":"dependency-graph-private"}'::jsonb
+      from target_org
+      returning id
     )
-    select count(*) from changed;
+    select count(*) from inserted_package;
   `;
   const { stdout } = await runFixtureSql(sql);
   if (stdout.trim() !== "1") {
-    throw new Error(`visibility fixture expected one package row, changed ${stdout.trim() || "none"}`);
+    throw new Error(`private package fixture expected one row, inserted ${stdout.trim() || "none"}`);
   }
 }
 
@@ -433,11 +453,20 @@ export async function createBrowserOrgMemberForTest(
   const subject = randomUUID();
   const userId = randomUUID();
   const sql = `
-    with target_org as (
+    with existing_org as (
       select id
         from zed_orgs
        where slug = ${sqlText(org)}
          and is_soft_deleted = false
+    ), inserted_org as (
+      insert into zed_orgs (slug, name, settings)
+      select ${sqlText(org)}, ${sqlText(org)}, '{"fixture":"browser-membership"}'::jsonb
+       where not exists (select 1 from existing_org)
+      returning id
+    ), target_org as (
+      select id from existing_org
+      union all
+      select id from inserted_org
     ), inserted_user as (
       insert into zed_users (id, shared_auth_subject, auth_realm, display_name)
       select ${sqlText(userId)}::uuid, ${sqlText(subject)}::uuid, 'customer', 'E2E organization member'

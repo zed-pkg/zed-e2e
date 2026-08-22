@@ -92,9 +92,11 @@ function matrixHtml(mode: "package" | "scope" = "package"): string {
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width,initial-scale=1">
+        <meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"includeIndicatorStyles":false,"selfRequestsOnly":true}'>
         <title>Dependency graph matrix</title>
         <style>:root { color-scheme: dark; --text:#f2f2f0; --muted:#8fa1b5; --panel:#0d1118; --border:#263241; --orange:#ff7a1a; --blue:#8fd3f4; --mono:ui-monospace,monospace; } body { margin:24px; background:#07080c; color:var(--text); font-family:system-ui,sans-serif; } a { color:var(--blue); }</style>
         <link rel="stylesheet" href="/graph-assets/dependency-graph.css">
+        <script src="/static/htmx.min.js"></script>
         <script type="module" src="/graph-assets/dependency-graph.js"></script>
       </head>
       <body>
@@ -247,6 +249,41 @@ test.describe("dependency graph fixture, accessibility, and performance matrix",
     await expect(workspace.locator('[data-metric="nodes"]')).toHaveText("0");
     await expect(workspace.locator('[data-metric="edges"]')).toHaveText("0");
     await expect(workspace.locator('[data-role="empty"]')).toBeVisible();
+  });
+
+  test("bounded Maud and HTMX fragments mirror the semantic fallback surfaces", async ({ page }) => {
+    const fragmentStatuses: Array<{ path: string; status: number }> = [];
+    page.on("response", (response) => {
+      const url = new URL(response.url());
+      if (url.pathname.startsWith("/partials/dependency-graph/")) {
+        fragmentStatuses.push({ path: url.pathname, status: response.status() });
+      }
+    });
+    await openMatrixPage(page);
+    const workspace = page.locator("zed-dependency-graph");
+
+    await expect(workspace.locator('[data-role="inspector"] [data-fragment-source="htmx"]')).toBeVisible();
+    await expect(workspace.locator('[data-role="table"] [data-fragment-source="htmx"]')).toBeAttached();
+
+    await workspace.getByRole("button", { name: "Direct dependencies", exact: true }).click();
+    await expect(workspace.locator('[data-role="query-summary"] [data-fragment-source="htmx"]')).toBeVisible();
+    await expect(workspace.locator('[data-role="query-summary"]')).toContainText("Accessible query result");
+
+    await workspace.getByRole("button", { name: "Save view", exact: true }).click();
+    await expect(workspace.locator('[data-role="state-fragment"] [data-fragment-source="htmx"]')).toContainText(
+      "Open reproducible view",
+    );
+
+    await expect.poll(() => new Set(fragmentStatuses.map(({ path }) => path)).size).toBe(4);
+    expect(fragmentStatuses.every(({ status }) => status === 200)).toBe(true);
+    expect(new Set(fragmentStatuses.map(({ path }) => path))).toEqual(
+      new Set([
+        "/partials/dependency-graph/inspector",
+        "/partials/dependency-graph/query",
+        "/partials/dependency-graph/state",
+        "/partials/dependency-graph/table",
+      ]),
+    );
   });
 
   for (const matrixCase of matrixCases) {

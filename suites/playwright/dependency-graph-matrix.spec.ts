@@ -131,7 +131,7 @@ async function openMatrixPage(
   page: Page,
   mode: "package" | "scope" = "package",
 ): Promise<void> {
-  await page.route(MATRIX_PAGE, (route) =>
+  await page.route(`${MATRIX_PAGE}*`, (route) =>
     route.fulfill({ status: 200, contentType: "text/html", body: matrixHtml(mode) }),
   );
   await page.route("**/bff/dependency-graphs/packages/**", fulfillDeclaredGraph);

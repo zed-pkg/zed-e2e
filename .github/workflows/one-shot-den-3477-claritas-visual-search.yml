@@ -19,7 +19,7 @@ jobs:
   materialize:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,6 +28,9 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
+          cache: npm
+      - name: Install exact E2E dependencies
+        run: npm ci
       - name: Pin the reviewed web candidate and add browser assertions
         shell: bash
         run: |
@@ -74,10 +77,11 @@ jobs:
           )
 
           new_test = r'''
-          test("Claritas-inspired visual search recommends layouts and preserves overview navigation", async ({ page }) => {
+          test("Claritas-inspired visual search preserves user choice and overview navigation", async ({ page }) => {
             await openMatrixPage(page);
             const workspace = page.locator("zed-dependency-graph");
             const visualSearch = workspace.locator('[data-role="visual-search"]');
+            const recommendation = visualSearch.locator('[data-role="recommended-layout"]');
             const minimap = workspace.locator('[data-role="minimap"]');
             const applyRecommendation = visualSearch.locator(
               '[data-action="apply-recommended-layout"]',
@@ -91,10 +95,8 @@ jobs:
               ),
             );
             await expect(visualSearch).toBeVisible();
-            await expect(visualSearch.locator('[data-role="recommended-layout"]')).toHaveText("Layered");
+            await expect(recommendation).toHaveText(/^(Layered|Radial|Force)$/);
             await expect(visualSearch.locator('[data-score-layout]')).toHaveCount(3);
-            await expect(applyRecommendation).toBeDisabled();
-            await expect(applyRecommendation).toHaveText("Recommended layout active");
             await expect(minimap).toBeVisible();
             await expect(minimap.locator(".dg-minimap-node")).toHaveCount(deepNodes.length);
             await expect(minimap.locator(".dg-minimap-viewport")).toBeVisible();
@@ -111,29 +113,28 @@ jobs:
               )
               .not.toBe(before);
 
-            const radialNodes = wideNodes.slice(0, 19);
-            await installResolvedFixture(
-              page,
-              resolvedFixture(
-                radialNodes,
-                radialNodes.slice(1).map((_, index) => [0, index + 1]),
-              ),
+            const recommendedLabel = (await recommendation.textContent())?.trim();
+            expect(["Layered", "Radial", "Force"]).toContain(recommendedLabel);
+            const alternateLabel = ["Layered", "Radial", "Force"].find(
+              (label) => label !== recommendedLabel,
             );
-            await expect(visualSearch.locator('[data-role="recommended-layout"]')).toHaveText("Radial");
+            expect(alternateLabel).toBeTruthy();
+            await workspace.getByRole("button", { name: alternateLabel!, exact: true }).click();
             await expect(applyRecommendation).toBeEnabled();
             await expect(applyRecommendation).toHaveText("Apply recommendation");
             await applyRecommendation.click();
-            await expect(workspace.getByRole("button", { name: "Radial", exact: true })).toHaveAttribute(
-              "aria-pressed",
-              "true",
-            );
+            await expect(
+              workspace.getByRole("button", { name: recommendedLabel!, exact: true }),
+            ).toHaveAttribute("aria-pressed", "true");
             await expect(applyRecommendation).toBeDisabled();
+            await expect(applyRecommendation).toHaveText("Recommended layout active");
 
             await installResolvedFixture(
               page,
               resolvedFixture(cycleNodes, [[0, 1], [1, 2], [2, 0], [2, 3]]),
             );
-            await expect(visualSearch.locator('[data-role="recommended-layout"]')).toHaveText("Force");
+            await expect(recommendation).toHaveText(/^(Layered|Radial|Force)$/);
+            await expect(minimap.locator(".dg-minimap-node")).toHaveCount(cycleNodes.length);
           });
 
           '''

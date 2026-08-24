@@ -79,6 +79,9 @@ jobs:
             const workspace = page.locator("zed-dependency-graph");
             const visualSearch = workspace.locator('[data-role="visual-search"]');
             const minimap = workspace.locator('[data-role="minimap"]');
+            const applyRecommendation = visualSearch.locator(
+              '[data-action="apply-recommended-layout"]',
+            );
 
             await installResolvedFixture(
               page,
@@ -90,7 +93,8 @@ jobs:
             await expect(visualSearch).toBeVisible();
             await expect(visualSearch.locator('[data-role="recommended-layout"]')).toHaveText("Layered");
             await expect(visualSearch.locator('[data-score-layout]')).toHaveCount(3);
-            await expect(workspace.getByRole("button", { name: "Apply recommendation", exact: true })).toBeDisabled();
+            await expect(applyRecommendation).toBeDisabled();
+            await expect(applyRecommendation).toHaveText("Recommended layout active");
             await expect(minimap).toBeVisible();
             await expect(minimap.locator(".dg-minimap-node")).toHaveCount(deepNodes.length);
             await expect(minimap.locator(".dg-minimap-viewport")).toBeVisible();
@@ -107,21 +111,23 @@ jobs:
               )
               .not.toBe(before);
 
+            const radialNodes = wideNodes.slice(0, 19);
             await installResolvedFixture(
               page,
               resolvedFixture(
-                wideNodes,
-                wideNodes.slice(1).map((_, index) => [0, index + 1]),
+                radialNodes,
+                radialNodes.slice(1).map((_, index) => [0, index + 1]),
               ),
             );
             await expect(visualSearch.locator('[data-role="recommended-layout"]')).toHaveText("Radial");
-            const apply = workspace.getByRole("button", { name: "Apply recommendation", exact: true });
-            await expect(apply).toBeEnabled();
-            await apply.click();
+            await expect(applyRecommendation).toBeEnabled();
+            await expect(applyRecommendation).toHaveText("Apply recommendation");
+            await applyRecommendation.click();
             await expect(workspace.getByRole("button", { name: "Radial", exact: true })).toHaveAttribute(
               "aria-pressed",
               "true",
             );
+            await expect(applyRecommendation).toBeDisabled();
 
             await installResolvedFixture(
               page,

@@ -1,0 +1,66 @@
+name: one-shot DEN-3478 matrix reload routing
+
+on:
+  push:
+    branches:
+      - test/den-3478-dependency-graph-matrix
+    paths:
+      - .github/workflows/one-shot-den-3478-matrix-route.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: one-shot-den-3478-matrix-route-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: test/den-3478-dependency-graph-matrix
+          persist-credentials: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Make the deterministic matrix page route query-safe
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("suites/playwright/dependency-graph-matrix.spec.ts")
+          source = path.read_text()
+          old = "  await page.route(MATRIX_PAGE, (route) =>\n"
+          new = "  await page.route(`${MATRIX_PAGE}*`, (route) =>\n"
+          count = source.count(old)
+          if count != 1:
+              raise SystemExit(f"matrix page route: expected one match, found {count}")
+          path.write_text(source.replace(old, new, 1))
+          PY
+      - name: Verify type safety and the exact reload boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run typecheck
+          grep -Fq 'page.route(`${MATRIX_PAGE}*`' suites/playwright/dependency-graph-matrix.spec.ts
+          ! grep -Fq 'page.route(MATRIX_PAGE,' suites/playwright/dependency-graph-matrix.spec.ts
+          git diff --check
+      - name: Commit the fix and remove this workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/one-shot-den-3478-matrix-route.yml
+          git add suites/playwright/dependency-graph-matrix.spec.ts
+          git commit -m 'test(graph): preserve matrix fixtures across URL reloads'
+          git push origin HEAD:test/den-3478-dependency-graph-matrix

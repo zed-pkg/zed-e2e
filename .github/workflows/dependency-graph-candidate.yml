@@ -11,6 +11,7 @@ on:
       - "suites/playwright/dependency-graph-matrix.spec.ts"
       - "suites/playwright/dependency-graph-private.spec.ts"
       - "suites/playwright/dependency-graph-multi-instance.spec.ts"
+      - "suites/playwright/dependency-graph-insights.spec.ts"
       - "playwright.graph-multi-instance.config.ts"
   workflow_dispatch:
 
@@ -32,7 +33,7 @@ env:
   ZED_LIB_CORE_CANDIDATE: c3d486a1519381276fbec02aa25247f542924443
   ZED_WEB_CORE_CANDIDATE: 9ca75929b0be79aaa0b8af60c2810a8ac0c34198
   ZED_API_CANDIDATE: 7e280f7d6a23432b5414ffeb591ca77737b1ce37
-  ZED_WEB_CANDIDATE: 16a062963a54005ca4832c84a36200eb23d39294
+  ZED_WEB_CANDIDATE: 19ec50bfeec9c23b3bd73a52a6bf01a68ac6de74
   ZED_CLI_CANDIDATE: 3265041478d6873ce3815b11930bd1e8e8004837
   ZED_CLIENTS_CANDIDATE: 799c967f44fdd7932d18432257a2bd46eff4e33a
 
@@ -207,6 +208,7 @@ jobs:
           suites/playwright/dependency-graph-multi-instance.spec.ts
           suites/playwright/dependency-graph-matrix.spec.ts
           suites/playwright/dependency-graph-private.spec.ts
+          suites/playwright/dependency-graph-insights.spec.ts
           --config=playwright.graph-multi-instance.config.ts
           --workers=1
 

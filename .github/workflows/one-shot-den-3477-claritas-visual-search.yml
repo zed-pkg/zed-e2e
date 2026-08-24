@@ -1,0 +1,176 @@
+name: one-shot DEN-3477 Claritas visual-search certification
+
+on:
+  push:
+    branches:
+      - test/den-3478-dependency-graph-matrix
+    paths:
+      - .github/workflows/one-shot-den-3477-claritas-visual-search.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: one-shot-den-3477-claritas-visual-search-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: test/den-3478-dependency-graph-matrix
+          persist-credentials: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Pin the reviewed web candidate and add browser assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          WEB_CANDIDATE = "19ec50bfeec9c23b3bd73a52a6bf01a68ac6de74"
+          OLD_WEB = "16a062963a54005ca4832c84a36200eb23d39294"
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
+              return text.replace(old, new, 1)
+
+          for filename in (
+              ".github/workflows/dependency-graph-candidate.yml",
+              ".github/workflows/dependency-graph-multi-instance-candidate.yml",
+          ):
+              path = Path(filename)
+              content = path.read_text()
+              content = replace_once(
+                  content,
+                  f"ZED_WEB_CANDIDATE: {OLD_WEB}",
+                  f"ZED_WEB_CANDIDATE: {WEB_CANDIDATE}",
+                  f"{filename} web candidate",
+              )
+              path.write_text(content)
+
+          spec_path = Path("suites/playwright/dependency-graph-matrix.spec.ts")
+          spec = spec_path.read_text()
+          spec = replace_once(
+              spec,
+              '''        <link rel="stylesheet" href="/graph-assets/dependency-graph.css">
+                    <script src="/static/htmx.min.js"></script>
+                    <script type="module" src="/graph-assets/dependency-graph.js"></script>''',
+              '''        <link rel="stylesheet" href="/graph-assets/dependency-graph.css">
+                    <link rel="stylesheet" href="/static/dependency-graph-insights.css">
+                    <script src="/static/htmx.min.js"></script>
+                    <script type="module" src="/graph-assets/dependency-graph.js"></script>
+                    <script type="module" src="/static/dependency-graph-insights.js"></script>''',
+              "matrix visual-search assets",
+          )
+
+          new_test = r'''
+          test("Claritas-inspired visual search recommends layouts and preserves overview navigation", async ({ page }) => {
+            await openMatrixPage(page);
+            const workspace = page.locator("zed-dependency-graph");
+            const visualSearch = workspace.locator('[data-role="visual-search"]');
+            const minimap = workspace.locator('[data-role="minimap"]');
+
+            await installResolvedFixture(
+              page,
+              resolvedFixture(
+                deepNodes,
+                deepNodes.slice(1).map((_, index) => [index, index + 1]),
+              ),
+            );
+            await expect(visualSearch).toBeVisible();
+            await expect(visualSearch.locator('[data-role="recommended-layout"]')).toHaveText("Layered");
+            await expect(visualSearch.locator('[data-score-layout]')).toHaveCount(3);
+            await expect(workspace.getByRole("button", { name: "Apply recommendation", exact: true })).toBeDisabled();
+            await expect(minimap).toBeVisible();
+            await expect(minimap.locator(".dg-minimap-node")).toHaveCount(deepNodes.length);
+            await expect(minimap.locator(".dg-minimap-viewport")).toBeVisible();
+
+            const before = await workspace.evaluate((element) =>
+              JSON.stringify((element as HTMLElement & { transform: unknown }).transform),
+            );
+            await minimap.locator('svg[data-role="minimap-svg"]').click({ position: { x: 14, y: 14 } });
+            await expect
+              .poll(() =>
+                workspace.evaluate((element) =>
+                  JSON.stringify((element as HTMLElement & { transform: unknown }).transform),
+                ),
+              )
+              .not.toBe(before);
+
+            await installResolvedFixture(
+              page,
+              resolvedFixture(
+                wideNodes,
+                wideNodes.slice(1).map((_, index) => [0, index + 1]),
+              ),
+            );
+            await expect(visualSearch.locator('[data-role="recommended-layout"]')).toHaveText("Radial");
+            const apply = workspace.getByRole("button", { name: "Apply recommendation", exact: true });
+            await expect(apply).toBeEnabled();
+            await apply.click();
+            await expect(workspace.getByRole("button", { name: "Radial", exact: true })).toHaveAttribute(
+              "aria-pressed",
+              "true",
+            );
+
+            await installResolvedFixture(
+              page,
+              resolvedFixture(cycleNodes, [[0, 1], [1, 2], [2, 0], [2, 3]]),
+            );
+            await expect(visualSearch.locator('[data-role="recommended-layout"]')).toHaveText("Force");
+          });
+
+          '''
+          spec = replace_once(
+              spec,
+              '  test("large graph uses a measured bounded canvas while retaining full query data", async ({ page }) => {',
+              new_test + '  test("large graph uses a measured bounded canvas while retaining full query data", async ({ page }) => {',
+              "visual-search browser test",
+          )
+          spec = replace_once(
+              spec,
+              '''    await expect(workspace.locator(".dg-node")).toHaveCount(750);
+                expect(elapsed).toBeLessThan(7_500);''',
+              '''    await expect(workspace.locator(".dg-node")).toHaveCount(750);
+                await expect(workspace.locator('[data-role="visual-search"]')).toBeVisible();
+                await expect(workspace.locator('[data-role="minimap"] .dg-minimap-node')).toHaveCount(500);
+                expect(await workspace.locator('[data-role="minimap"] .dg-minimap-edge').count()).toBeLessThanOrEqual(900);
+                expect(elapsed).toBeLessThan(7_500);''',
+              "large graph minimap budget assertions",
+          )
+          spec_path.write_text(spec)
+          PY
+      - name: Verify the bounded E2E diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx tsc --noEmit
+          npx playwright test suites/playwright/dependency-graph-matrix.spec.ts --list
+          grep -Fq 'ZED_WEB_CANDIDATE: 19ec50bfeec9c23b3bd73a52a6bf01a68ac6de74' .github/workflows/dependency-graph-candidate.yml
+          grep -Fq 'ZED_WEB_CANDIDATE: 19ec50bfeec9c23b3bd73a52a6bf01a68ac6de74' .github/workflows/dependency-graph-multi-instance-candidate.yml
+          grep -Fq '/static/dependency-graph-insights.js' suites/playwright/dependency-graph-matrix.spec.ts
+          grep -Fq 'dg-minimap-node' suites/playwright/dependency-graph-matrix.spec.ts
+          git diff --check
+      - name: Commit certification and remove this workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/one-shot-den-3477-claritas-visual-search.yml
+          git add \
+            .github/workflows/dependency-graph-candidate.yml \
+            .github/workflows/dependency-graph-multi-instance-candidate.yml \
+            suites/playwright/dependency-graph-matrix.spec.ts
+          git commit -m 'test(graph): certify visual search and overview navigation'
+          git push origin HEAD:test/den-3478-dependency-graph-matrix

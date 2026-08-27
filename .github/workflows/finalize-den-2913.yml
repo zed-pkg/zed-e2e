@@ -1,0 +1,93 @@
+name: Finalize DEN-2913
+
+on:
+  push:
+    branches:
+      - alexanderdmills/den-2913-zed-e2e-live-cloud-public-edge-workflows-still-target
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-2913-final-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  patch-validate-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Apply total old-to-new endpoint mapping
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              "https://registry.aws.zpkg.tech": "https://registry.aws.zpkg.net",
+              "https://registry.hetzner.zpkg.tech": "https://registry.hetzner.zpkg.net",
+              "https://aws.zpkg.tech": "https://web.aws.zpkg.net",
+              "https://hetzner.zpkg.tech": "https://web.hetzner.zpkg.net",
+          }
+          files = (
+              Path(".github/workflows/live-opto-sync-cloud.yml"),
+              Path(".github/workflows/public-edge-readiness.yml"),
+              Path("docs/live-opto-sync-cloud.md"),
+              Path("docs/public-edge-readiness.md"),
+          )
+          expected = {
+              "https://registry.aws.zpkg.tech": 4,
+              "https://registry.hetzner.zpkg.tech": 4,
+              "https://aws.zpkg.tech": 2,
+              "https://hetzner.zpkg.tech": 2,
+          }
+          observed = {old: 0 for old in replacements}
+          for path in files:
+              original = path.read_text(encoding="utf-8")
+              updated = original
+              for old, new in replacements.items():
+                  observed[old] += updated.count(old)
+                  updated = updated.replace(old, new)
+              path.write_text(updated, encoding="utf-8")
+          if observed != expected:
+              raise SystemExit(f"endpoint inventory drifted: {observed!r}; expected {expected!r}")
+          PY
+
+      - name: Validate product contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          product_files=(
+            .github/workflows/live-opto-sync-cloud.yml
+            .github/workflows/public-edge-readiness.yml
+            docs/live-opto-sync-cloud.md
+            docs/public-edge-readiness.md
+          )
+          ! git grep -n 'zpkg\.tech' -- "${product_files[@]}"
+          test "$(git grep -h -o 'registry\.aws\.zpkg\.net' -- "${product_files[@]}" | wc -l)" -eq 4
+          test "$(git grep -h -o 'registry\.hetzner\.zpkg\.net' -- "${product_files[@]}" | wc -l)" -eq 4
+          test "$(git grep -h -o 'web\.aws\.zpkg\.net' -- "${product_files[@]}" | wc -l)" -eq 2
+          test "$(git grep -h -o 'web\.hetzner\.zpkg\.net' -- "${product_files[@]}" | wc -l)" -eq 2
+          bash -n scripts/check-zed-public-edge.sh
+          git diff --check
+
+      - name: Commit only validated product files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            .github/workflows/agent-den-2913.yml \
+            .github/workflows/repair-den-2913-validation.yml \
+            .github/workflows/finalize-den-2913.yml
+          git config user.name "alex-main-agent"
+          git config user.email "alex-main-agent@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(e2e): target zpkg.net public edges (DEN-2913)"
+          git push origin HEAD

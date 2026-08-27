@@ -26,8 +26,8 @@ lock behavior work inside each real cluster.
 The `live opto-sync zed cloud` workflow in this repository retains the same
 publish/install/frozen-install transaction for the intended public registries:
 
-- `https://registry.aws.zpkg.tech`
-- `https://registry.hetzner.zpkg.tech`
+- `https://registry.aws.zpkg.net`
+- `https://registry.hetzner.zpkg.net`
 
 It is manual-only until Cloudflare records and the cloud-specific edge routes are
 complete. AWS uses the existing hostPort gateway and does not have the nginx

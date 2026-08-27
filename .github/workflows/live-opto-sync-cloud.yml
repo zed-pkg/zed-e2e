@@ -99,9 +99,9 @@ jobs:
       matrix:
         include:
           - cloud: aws
-            registry: https://registry.aws.zpkg.tech
+            registry: https://registry.aws.zpkg.net
           - cloud: hetzner
-            registry: https://registry.hetzner.zpkg.tech
+            registry: https://registry.hetzner.zpkg.net
     concurrency:
       group: live-zed-${{ matrix.cloud }}
       cancel-in-progress: false

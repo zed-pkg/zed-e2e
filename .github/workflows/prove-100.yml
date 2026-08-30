@@ -1,0 +1,83 @@
+name: prove-100
+
+# The end-to-end proof: publish from a real git tag, mirror to GitHub, kill the
+# registry, install from the mirror, verify the digest. Runs on demand and
+# nightly; the live-edge job runs against production and is allowed to be the
+# thing that tells us production is down.
+
+on:
+  workflow_dispatch:
+    inputs:
+      live:
+        description: "Also run the live public-edge gates"
+        type: boolean
+        default: true
+  schedule:
+    - cron: "17 6 * * *"
+
+concurrency:
+  group: prove-100-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hermetic:
+    name: hermetic gates (G0–G9)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: zed-e2e }
+      - uses: actions/checkout@v4
+        with: { repository: zed-pkg/zed-cli, path: zed-cli, token: ${{ secrets.ZED_PKG_CHECKOUT_TOKEN }} }
+      - uses: actions/checkout@v4
+        with: { repository: zed-pkg/zed-api-server.rs, path: zed-api-server.rs, token: ${{ secrets.ZED_PKG_CHECKOUT_TOKEN }} }
+      - uses: actions/checkout@v4
+        with: { repository: zed-pkg/zed-web-server.rs, path: zed-web-server.rs, token: ${{ secrets.ZED_PKG_CHECKOUT_TOKEN }} }
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: "zed-cli -> target" }
+
+      - run: npm ci
+        working-directory: zed-e2e
+
+      - name: prove
+        working-directory: zed-e2e
+        env:
+          # Publishing to the fixture repo lives in the test org on purpose:
+          # it keeps live-fire publishes off the production org and off its
+          # Actions minutes.
+          ZED_PKG_GITHUB_TOKEN: ${{ secrets.ZED_PKG_FORGE_TOKEN }}
+          PROOF_FORGE_REPO: zed-pkg-test/zpkg-proof-fixture
+          PROOF_ROOT: ${{ runner.temp }}/proof
+        run: bash suites/proof/prove-100.sh
+
+      - name: upload receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-receipts-hermetic
+          path: ${{ runner.temp }}/proof/proof-report.json
+
+  live:
+    name: live edge gates (L1–L5)
+    if: github.event_name == 'schedule' || inputs.live
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: probe the public edge
+        env:
+          PROOF_ROOT: ${{ runner.temp }}/proof-live
+          LIVE_PROOF_SHA256: ${{ vars.LIVE_PROOF_SHA256 }}
+        run: |
+          mkdir -p "$PROOF_ROOT"
+          bash suites/proof/prove-100.sh --live
+      - name: upload receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-receipts-live
+          path: ${{ runner.temp }}/proof-live/proof-report.json

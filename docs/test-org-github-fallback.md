@@ -7,9 +7,11 @@ This cross-repository acceptance test runs the exact pinned registry Worker from
 The Worker origin is deliberately set to an unreachable loopback port. No live
 Rust service is stopped or contacted. The test requires:
 
-- two independently sized GitHub Release archives and sidecars to match their
-  pinned SHA-256 and compressed byte counts;
+- all four current GitHub Release archives and sidecars to match their pinned
+  SHA-256 values and compressed byte counts;
 - version and package metadata to be reconstructed from anonymous GitHub data;
+- the package version list to include every pinned fixture, identify its first
+  sorted entry as `latest`, and report any additional public tags explicitly;
 - `HEAD` to preserve the fallback provenance while returning no body;
 - `/healthz` to remain available but explicitly report degraded operation;
 - writes to fail closed with a retryable 503;

@@ -7,7 +7,12 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 
-import { isStillOurProcess } from "./stack.js";
+import {
+  createBrowserOrgMemberForTest,
+  createBrowserProjectMemberForTest,
+  createPrivatePackageForTest,
+  isStillOurProcess,
+} from "./stack.js";
 
 test("a live process is recognized by its own binary path", () => {
   // This test process is node; execPath is exactly what `ps -o args=` shows.
@@ -39,4 +44,34 @@ test("nonsense pids are rejected rather than signalled", () => {
   for (const pid of [0, -1, 2 ** 31]) {
     assert.equal(isStillOurProcess(pid, process.execPath), false, `pid ${pid}`);
   }
+});
+
+test("private graph fixture SQL rejects unbounded identifiers before execution", async () => {
+  await assert.rejects(
+    createPrivatePackageForTest("../another-org", "package"),
+    /unsafe test organization slug/,
+  );
+  await assert.rejects(
+    createPrivatePackageForTest("safe-org", "package'; drop table zed_packages; --"),
+    /unsafe test package name/,
+  );
+});
+
+test("browser membership fixtures reject unsafe scope inputs before execution", async () => {
+  await assert.rejects(
+    createBrowserOrgMemberForTest("../another-org"),
+    /unsafe test organization slug/,
+  );
+  await assert.rejects(
+    createBrowserProjectMemberForTest("safe-org", "project'; select pg_sleep(5); --", ["safe-package"]),
+    /unsafe test project slug/,
+  );
+  await assert.rejects(
+    createBrowserProjectMemberForTest("safe-org", "safe-project", ["safe", "bad,package"]),
+    /unsafe test package name/,
+  );
+  await assert.rejects(
+    createBrowserProjectMemberForTest("safe-org", "safe-project", ["same", "same"]),
+    /package names must be unique/,
+  );
 });

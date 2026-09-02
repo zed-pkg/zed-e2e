@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  TEST_HARNESS_REF: c289b76bbc02563922446635f59b5a896b631d09
+  TEST_HARNESS_REF: f91328d59892bbfa8c3bef0866fde8646de39825
   INFRA_REF: 754bb1f732659ed7f0bfa97f0b35844fdcd0a1d4
 
 jobs:

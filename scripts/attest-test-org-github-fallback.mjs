@@ -29,7 +29,7 @@ if (config.schema !== "zed-pkg-test.public-edge-fallback-canaries/v1") {
 const repository = config.repository;
 const canaries = config.canaries;
 if (!repository || !Array.isArray(canaries) || canaries.length < 2) {
-  throw new Error("fixture ledger requires repository metadata and two canaries");
+  throw new Error("fixture ledger requires repository metadata and multiple canaries");
 }
 
 const workerUrl = pathToFileURL(
@@ -44,6 +44,7 @@ const evidence = {
   github_run_id: process.env.GITHUB_RUN_ID || null,
   fixture_ref: process.env.TEST_HARNESS_REF || null,
   infra_ref: process.env.INFRA_REF || null,
+  canary_versions: canaries.map((item) => item.version),
   checks: {},
 };
 const failures = [];
@@ -216,6 +217,13 @@ await record("origin_down_package_metadata", async () => {
   );
   const metadata = await response.json();
   const expectedVersions = canaries.map((item) => item.version);
+  const versions = Array.isArray(metadata.versions) ? metadata.versions : [];
+  const sortedVersions = [...versions].sort((left, right) =>
+    left < right ? 1 : left > right ? -1 : 0,
+  );
+  const extraVersions = versions.filter(
+    (version) => !expectedVersions.includes(version),
+  );
   return {
     ok:
       response.status === 200 &&
@@ -224,11 +232,14 @@ await record("origin_down_package_metadata", async () => {
       metadata.org === repository.org &&
       metadata.name === repository.repo &&
       metadata.repo_url === `https://github.com/${repository.org}/${repository.repo}` &&
-      expectedVersions.every((version) => metadata.versions.includes(version)) &&
-      metadata.latest === canaries.at(-1).version,
+      expectedVersions.every((version) => versions.includes(version)) &&
+      metadata.latest === versions[0] &&
+      JSON.stringify(versions) === JSON.stringify(sortedVersions),
     status: response.status,
     headers: proofHeaders(response),
     metadata,
+    expected_versions: expectedVersions,
+    extra_versions: extraVersions,
   };
 });
 

@@ -143,7 +143,9 @@ fn validate_profile(profile: &Profile) -> Vec<String> {
             errors.push(format!("unsupported native adapter language: {language}"));
         }
         if !is_safe_relative(relative) {
-            errors.push(format!("native adapter path is not safe and relative: {relative}"));
+            errors.push(format!(
+                "native adapter path is not safe and relative: {relative}"
+            ));
         }
         if !relative.starts_with(&install_prefix) {
             errors.push(format!(
@@ -157,7 +159,9 @@ fn validate_profile(profile: &Profile) -> Vec<String> {
     }
     for (label, relative) in &profile.legacy_source_pins {
         if !is_safe_relative(relative) {
-            errors.push(format!("legacy source pin {label} is not a safe relative path"));
+            errors.push(format!(
+                "legacy source pin {label} is not a safe relative path"
+            ));
         }
     }
     errors
@@ -199,11 +203,7 @@ fn validate_wrapper(profile: &Profile, wrapper: &Path, live: bool) -> Vec<String
         }
     };
 
-    if toml_string(
-        &manifest,
-        &["dependencies", "opto-sync/opto-sync-clients"],
-    ) != Some("^0.2.0")
-    {
+    if toml_string(&manifest, &["dependencies", "opto-sync/opto-sync-clients"]) != Some("^0.2.0") {
         errors.push("wrapper dependency must pin opto-sync-clients to ^0.2.0".to_owned());
     }
     if toml_string(&manifest, &["install", "dir"]) != Some("zed_modules") {
@@ -250,11 +250,19 @@ fn validate_wrapper(profile: &Profile, wrapper: &Path, live: bool) -> Vec<String
         errors.push("live lock is missing opto-sync/opto-sync-clients".to_owned());
         return errors;
     };
-    let sha256 = package.get("sha256").and_then(TomlValue::as_str).unwrap_or("");
+    let sha256 = package
+        .get("sha256")
+        .and_then(TomlValue::as_str)
+        .unwrap_or("");
     if !is_hex(sha256, 64) {
         errors.push("live package sha256 must be 64 hexadecimal characters".to_owned());
     }
-    if package.get("size").and_then(TomlValue::as_integer).unwrap_or(0) <= 0 {
+    if package
+        .get("size")
+        .and_then(TomlValue::as_integer)
+        .unwrap_or(0)
+        <= 0
+    {
         errors.push("live package size must be positive".to_owned());
     }
     for field in ["format", "vcs_tag", "source"] {
@@ -391,10 +399,10 @@ fn parse_args() -> Result<Args, String> {
                 ));
             }
             "--zed-interfaces" => {
-                parsed.zed_interfaces = Some(PathBuf::from(
-                    args.next()
-                        .ok_or_else(|| "--zed-interfaces requires a path".to_owned())?,
-                ));
+                parsed.zed_interfaces =
+                    Some(PathBuf::from(args.next().ok_or_else(|| {
+                        "--zed-interfaces requires a path".to_owned()
+                    })?));
             }
             "-h" | "--help" => {
                 println!(
@@ -462,7 +470,10 @@ mod tests {
 
     #[test]
     fn repository_profile_passes() {
-        assert_eq!(validate_profile(&repository_profile()), Vec::<String>::new());
+        assert_eq!(
+            validate_profile(&repository_profile()),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
@@ -485,15 +496,21 @@ mod tests {
             "zed_modules/opto-sync/opto-sync-clients/../../outside".to_owned(),
         );
         let errors = validate_profile(&profile);
-        assert!(errors.iter().any(|error| error.contains("not safe and relative")));
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("not safe and relative"))
+        );
     }
 
     #[test]
     fn partial_bootstrap_sources_are_rejected_before_file_access() {
         let profile = repository_profile();
         let errors = validate_bootstrap(&profile, Some(Path::new("missing-cli")), None);
-        assert!(errors
-            .iter()
-            .any(|error| error.contains("requires both zed-cli and zed-interfaces")));
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("requires both zed-cli and zed-interfaces"))
+        );
     }
 }

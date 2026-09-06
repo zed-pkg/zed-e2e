@@ -10,7 +10,7 @@ and Hetzner Kubernetes clusters. Each protected cloud job opens a
 complete package transaction without depending on public DNS:
 
 1. publish `opto-sync/syncer@0.2.1`;
-2. publish `opto-sync/opto-sync-clients@0.2.0`;
+2. publish `opto-sync/opto-sync-clients@0.4.0`;
 3. publish `opto-sync/opto-sync-e2e@0.1.0`;
 4. install only the top-level E2E dependency into a blank consumer;
 5. prove all three packages materialize under `zed_modules/opto-sync/`;

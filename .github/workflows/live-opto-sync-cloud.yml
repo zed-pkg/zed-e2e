@@ -75,7 +75,7 @@ jobs:
           assert syncer['targets']['repository']['name'] == 'syncer'
           assert syncer['targets']['repository']['dir'] == '.'
           assert clients['package']['name'] == 'opto-sync-clients'
-          assert clients['package']['version'] == '0.2.0'
+          assert clients['package']['version'] == '0.4.0'
           assert clients.get('dependencies', {}) == {}
           assert e2e['package']['name'] == 'opto-sync-e2e'
           assert e2e['package']['version'] == '0.1.0'
@@ -185,13 +185,13 @@ jobs:
         run: |
           set -euo pipefail
           curl -fsS "$ZED_PKG_REGISTRY/v1/packages/opto-sync/syncer/versions/0.2.1" > /tmp/syncer.json
-          curl -fsS "$ZED_PKG_REGISTRY/v1/packages/opto-sync/opto-sync-clients/versions/0.2.0" > /tmp/clients.json
+          curl -fsS "$ZED_PKG_REGISTRY/v1/packages/opto-sync/opto-sync-clients/versions/0.4.0" > /tmp/clients.json
           curl -fsS "$ZED_PKG_REGISTRY/v1/packages/opto-sync/opto-sync-e2e/versions/0.1.0" > /tmp/e2e.json
           python3 - <<'PY'
           import json
           for path, name, version in [
               ('/tmp/syncer.json', 'syncer', '0.2.1'),
-              ('/tmp/clients.json', 'opto-sync-clients', '0.2.0'),
+              ('/tmp/clients.json', 'opto-sync-clients', '0.4.0'),
               ('/tmp/e2e.json', 'opto-sync-e2e', '0.1.0'),
           ]:
               value = json.load(open(path))

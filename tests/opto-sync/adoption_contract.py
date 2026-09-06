@@ -58,7 +58,7 @@ def validate_profile(profile: dict[str, Any]) -> None:
     assert set(profile["releaseGates"]) == {"DEN-309", "DEN-363"}
     assert profile["dependency"] == {
         "package": "opto-sync/opto-sync-clients",
-        "range": "^0.2.0",
+        "range": "^0.4.0",
         "installRoot": "zed_modules/opto-sync/opto-sync-clients",
     }
     assert REQUIRED_SCENARIOS <= set(profile["requiredScenarios"])
@@ -82,7 +82,7 @@ def validate_wrapper(profile: dict[str, Any], wrapper: pathlib.Path, live: bool)
     lock = tomllib.loads((wrapper / ".zpkg.lock").read_text())
     adapter = load_json(wrapper / "opto-sync-adapter.json")
 
-    assert manifest["dependencies"]["opto-sync/opto-sync-clients"] == "^0.2.0"
+    assert manifest["dependencies"]["opto-sync/opto-sync-clients"] == "^0.4.0"
     assert manifest["install"]["dir"] == "zed_modules"
     assert adapter["repository"] == profile["wrapperRepository"]
     assert adapter["e2eRepository"] == profile["e2eRepository"]

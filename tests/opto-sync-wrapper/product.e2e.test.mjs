@@ -123,7 +123,7 @@ test(
   { skip: NO_SYNC },
   () => {
     assert.equal(profile.dependency.package, 'opto-sync/opto-sync-clients');
-    assert.equal(profile.dependency.range, '^0.2.0');
+    assert.equal(profile.dependency.range, '^0.4.0');
     assert.ok(profile.collections.length > 0);
     assert.ok(profile.writeStrategies.includes('queuedOptimistic'));
     assert.ok(profile.writeStrategies.includes('remoteConfirmed'));

@@ -97,14 +97,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The hostnames the shipped binary actually uses. `zed`'s compiled-in
+          # registry default is https://registry.zpkg.net (zed-interfaces
+          # src/rust/registry.rs) and its CDN default is https://cdn.zpkg.net
+          # (zed-cli src/mirror.rs); probing a different zone told us nothing
+          # about what a user's install would hit.
+          - name: public-registry
+            url: https://registry.zpkg.net/healthz
+          - name: public-web
+            url: https://web.zpkg.net/healthz
+          - name: public-cdn
+            url: https://cdn.zpkg.net/.well-known/zpkg-mirrors.json
+          # Per-cloud origins, named as terraform/cloudflare/main.tf creates
+          # them (registry.<cloud> / web.<cloud>, always DNS-only). These are
+          # the canaries: they answer even while the proxied public name is
+          # being repointed.
           - name: aws-registry
-            url: https://registry.aws.zpkg.tech/healthz
+            url: https://registry.aws.zpkg.net/healthz
           - name: aws-web
-            url: https://aws.zpkg.tech/healthz
+            url: https://web.aws.zpkg.net/healthz
           - name: hetzner-registry
-            url: https://registry.hetzner.zpkg.tech/healthz
+            url: https://registry.hetzner.zpkg.net/healthz
           - name: hetzner-web
-            url: https://hetzner.zpkg.tech/healthz
+            url: https://web.hetzner.zpkg.net/healthz
     env:
       EDGE_ENFORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.enforce || false }}
     steps:

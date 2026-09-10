@@ -3,12 +3,14 @@ name: Zed toolchain TOML contracts
 on:
   pull_request:
     paths:
+      - '.zpkg.toml'
       - '.github/workflows/tagged-e2e.yml'
       - '.github/workflows/zed-toolchain-toml.yml'
       - 'scripts/check-zed-toolchain-toml.py'
   push:
     branches: [main]
     paths:
+      - '.zpkg.toml'
       - '.github/workflows/tagged-e2e.yml'
       - '.github/workflows/zed-toolchain-toml.yml'
       - 'scripts/check-zed-toolchain-toml.py'

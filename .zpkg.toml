@@ -13,7 +13,7 @@ url = "https://github.com/zed-pkg/zed-e2e"
 
 [dependencies]
 "zed-pkg/zed-api-server" = "^0.1.0"
-"zed-pkg/zed-cli" = "^0.1.0"
+"zed-pkg/zed-cli" = "^0.3.0"
 "zed-pkg/zed-interfaces" = "^0.1.0"
 "zed-pkg/zed-web-server" = "^0.1.0"
 

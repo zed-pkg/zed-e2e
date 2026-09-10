@@ -60,10 +60,32 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
-        with:
-          toolchain: 1.95.0
+      - name: Install Rust toolchain declared by audited zed-cli
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain="$(python3 - <<'PY'
+          import tomllib
+          with open("zed-cli/rust-toolchain.toml", "rb") as source:
+              print(tomllib.load(source)["toolchain"]["channel"])
+          PY
+          )"
+          mapfile -t components < <(python3 - <<'PY'
+          import tomllib
+          with open("zed-cli/rust-toolchain.toml", "rb") as source:
+              values = tomllib.load(source)["toolchain"].get("components", [])
+          for value in values:
+              print(value)
+          PY
+          )
+          install_args=(toolchain install "$toolchain" --profile minimal --no-self-update)
+          for component in "${components[@]}"; do
+            install_args+=(--component "$component")
+          done
+          rustup "${install_args[@]}"
+          rustup default "$toolchain"
+          printf 'RUSTUP_TOOLCHAIN=%s\n' "$toolchain" >> "$GITHUB_ENV"
+          rustup run "$toolchain" rustc --version
 
       - name: Parse all tracked TOML and verify the coupled toolchain pins
         run: |

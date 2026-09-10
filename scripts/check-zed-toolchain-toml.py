@@ -149,9 +149,33 @@ def main() -> None:
     cargo_package = cargo.get("package")
     if not isinstance(cargo_package, dict):
         fail("zed-cli/Cargo.toml has no [package] table")
+    cli_name = cargo_package.get("name")
     cli_version = cargo_package.get("version")
+    if not isinstance(cli_name, str) or not cli_name:
+        fail(f"zed-cli/Cargo.toml package.name must be a non-empty string, got {cli_name!r}")
     if not isinstance(cli_version, str) or not cli_version:
         fail(f"zed-cli/Cargo.toml package.version must be a non-empty string, got {cli_version!r}")
+
+    zed_manifest = zed_toml.get(Path(".zpkg.toml"))
+    if not isinstance(zed_manifest, dict):
+        fail("tracked zed-cli/.zpkg.toml was not parsed")
+    zed_package = zed_manifest.get("package")
+    if not isinstance(zed_package, dict):
+        fail("zed-cli/.zpkg.toml has no [package] table")
+    zed_name = zed_package.get("name")
+    zed_version = zed_package.get("version")
+    if zed_name != cli_name:
+        fail(
+            "zed-cli package identity disagrees between .zpkg.toml and Cargo.toml: "
+            f"{zed_name!r} != {cli_name!r}"
+        )
+    if zed_version != cli_version:
+        fail(
+            "zed-cli package version disagrees between .zpkg.toml and Cargo.toml: "
+            f"{zed_version!r} != {cli_version!r}"
+        )
+    if "cli" in zed_manifest:
+        fail("zed-cli/.zpkg.toml must not contain the unsupported [cli] table")
 
     e2e_manifest = e2e_toml.get(Path(".zpkg.toml"))
     if not isinstance(e2e_manifest, dict):
@@ -159,7 +183,7 @@ def main() -> None:
     e2e_dependencies = e2e_manifest.get("dependencies")
     if not isinstance(e2e_dependencies, dict):
         fail("zed-e2e/.zpkg.toml has no [dependencies] table")
-    expected_cli_requirement = f"^{cli_version}"
+    expected_cli_requirement = f"^{zed_version}"
     actual_cli_requirement = e2e_dependencies.get("zed-pkg/zed-cli")
     if actual_cli_requirement != expected_cli_requirement:
         fail(
@@ -209,9 +233,9 @@ def main() -> None:
 
     print(
         "zed toolchain TOML audit passed: "
-        f"zed={zed_head}, flags2env={flags_head}, zed_cli_requirement={actual_cli_requirement}, "
-        f"zed_toml={len(zed_toml_paths)}, e2e_toml={len(e2e_toml_paths)}, "
-        f"flag_specs={len(root_specs)}"
+        f"zed={zed_head}, flags2env={flags_head}, zed_cli_package={zed_name}@{zed_version}, "
+        f"zed_cli_requirement={actual_cli_requirement}, zed_toml={len(zed_toml_paths)}, "
+        f"e2e_toml={len(e2e_toml_paths)}, flag_specs={len(root_specs)}"
     )
 
 

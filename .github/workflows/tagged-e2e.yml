@@ -10,7 +10,7 @@ on:
       zed_cli_ref:
         description: "zed-cli tag or SHA (tags preferred)"
         required: true
-        default: "bee064adf30969ca1a46450364f9e577019a37ad"
+        default: "62cf58f315a3bbad18ffd27c77fcd5ea96c884a8"
       flags_2_env_ref:
         description: "flags-2-env tag or SHA"
         required: true
@@ -24,7 +24,7 @@ on:
         required: true
         default: "3d2d4c98024e5bf718dc79c2648bd10d7759a31c"
       zed_web_ref:
-        description: "zed-web-server.rs tag, SHA, or branch"
+        description: "zed-web-server.rs tag or SHA (tags preferred)"
         required: true
         default: "b669850d317ebc07a8960aea4014706c55ffad22"
 

@@ -231,11 +231,25 @@ def main() -> None:
     if missing:
         fail(f"missing expected root CLI flag contracts: {', '.join(missing)}")
 
+    for name in sorted(EXPECTED_FLAG_SPECS):
+        contract = zed_toml.get(Path(name))
+        if not isinstance(contract, dict):
+            fail(f"root CLI flag contract was not parsed: {name}")
+        env_policy = contract.get("env")
+        if not isinstance(env_policy, dict) or env_policy.get("files") != []:
+            fail(
+                f"{name} must declare [env] files = [] so the selected flags2env parser cannot "
+                "implicitly load the caller working-directory .env"
+            )
+        parse_policy = contract.get("parse")
+        if not isinstance(parse_policy, dict) or parse_policy.get("allow_unknown") is not False:
+            fail(f"{name} must remain fail closed with parse.allow_unknown = false")
+
     print(
         "zed toolchain TOML audit passed: "
         f"zed={zed_head}, flags2env={flags_head}, zed_cli_package={zed_name}@{zed_version}, "
         f"zed_cli_requirement={actual_cli_requirement}, zed_toml={len(zed_toml_paths)}, "
-        f"e2e_toml={len(e2e_toml_paths)}, flag_specs={len(root_specs)}"
+        f"e2e_toml={len(e2e_toml_paths)}, flag_specs={len(root_specs)}, dotenv=disabled"
     )
 
 

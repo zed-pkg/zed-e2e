@@ -48,6 +48,7 @@ exclude = [
   ".DS_Store",
 ]
 
+# Zed package manifests expose only the package-level `test` hook. Developer
+# task decomposition belongs in zed-env.toml schema 2.
 [scripts]
-typecheck = "npm ci && npm run typecheck"
-harness = "npm ci && npm run test:harness"
+test = "npm ci && npm run typecheck && npm run test:harness"

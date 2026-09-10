@@ -21,6 +21,7 @@ SHA40 = re.compile(r"^[0-9a-f]{40}$")
 CANONICAL_FLAGS_GIT = "https://github.com/flags-2-env/flags-2-env.git"
 CANONICAL_FLAGS_CHECKOUT = "repository: flags-2-env/flags-2-env"
 LEGACY_FLAGS_FRAGMENT = "github.com/oresoftware/flags-2-env"
+TOML_SUFFIXES = (".toml", ".toml.example")
 EXPECTED_FLAG_SPECS = frozenset(
     {
         ".cli-flags.toml",
@@ -66,7 +67,7 @@ def tracked_toml_files(root: Path) -> list[Path]:
     relative = sorted(
         Path(value.decode("utf-8"))
         for value in raw.split(b"\0")
-        if value and value.decode("utf-8").endswith(".toml")
+        if value and value.decode("utf-8").endswith(TOML_SUFFIXES)
     )
     return relative
 

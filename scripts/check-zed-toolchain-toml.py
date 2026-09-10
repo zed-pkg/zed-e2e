@@ -32,6 +32,8 @@ EXPECTED_FLAG_SPECS = frozenset(
         ".tool-cli-flags.toml",
     }
 )
+EXPECTED_PUBLIC_BINS = frozenset({"zed", "zed-gitops", "zed-git-install"})
+PRIVATE_CARGO_BINS = frozenset({"zed-binary"})
 
 
 def fail(message: str) -> "NoReturn":
@@ -156,6 +158,18 @@ def main() -> None:
     if not isinstance(cli_version, str) or not cli_version:
         fail(f"zed-cli/Cargo.toml package.version must be a non-empty string, got {cli_version!r}")
 
+    cargo_bins = {
+        entry.get("name")
+        for entry in cargo.get("bin", [])
+        if isinstance(entry, dict) and isinstance(entry.get("name"), str)
+    }
+    missing_cargo_bins = sorted((EXPECTED_PUBLIC_BINS | PRIVATE_CARGO_BINS) - cargo_bins)
+    if missing_cargo_bins:
+        fail(
+            "zed-cli/Cargo.toml is missing reviewed binary targets: "
+            + ", ".join(missing_cargo_bins)
+        )
+
     zed_manifest = zed_toml.get(Path(".zpkg.toml"))
     if not isinstance(zed_manifest, dict):
         fail("tracked zed-cli/.zpkg.toml was not parsed")
@@ -176,6 +190,52 @@ def main() -> None:
         )
     if "cli" in zed_manifest:
         fail("zed-cli/.zpkg.toml must not contain the unsupported [cli] table")
+
+    zed_bins = zed_manifest.get("bin")
+    if not isinstance(zed_bins, dict):
+        fail("zed-cli/.zpkg.toml has no [bin] table")
+    missing_public_bins = sorted(EXPECTED_PUBLIC_BINS - set(zed_bins))
+    if missing_public_bins:
+        fail(
+            "zed-cli/.zpkg.toml is missing reviewed public binaries: "
+            + ", ".join(missing_public_bins)
+        )
+    private_leaks = sorted(PRIVATE_CARGO_BINS & set(zed_bins))
+    if private_leaks:
+        fail(
+            "zed-cli/.zpkg.toml must keep private Cargo binaries out of [bin]: "
+            + ", ".join(private_leaks)
+        )
+    unexpected_public_bins = sorted(set(zed_bins) - cargo_bins)
+    if unexpected_public_bins:
+        fail(
+            "zed-cli/.zpkg.toml publishes binaries not declared by Cargo.toml: "
+            + ", ".join(unexpected_public_bins)
+        )
+
+    zed_build = zed_manifest.get("build")
+    if not isinstance(zed_build, dict):
+        fail("zed-cli/.zpkg.toml has no [build] table")
+    zed_outputs = zed_build.get("outputs")
+    if not isinstance(zed_outputs, list) or not all(isinstance(value, str) for value in zed_outputs):
+        fail("zed-cli/.zpkg.toml build.outputs must be an array of strings")
+    output_set = set(zed_outputs)
+    for name, target in sorted(zed_bins.items()):
+        expected_target = f"target/release/{name}"
+        if target != expected_target:
+            fail(f"zed-cli/.zpkg.toml [bin].{name} must map to {expected_target}")
+        if expected_target not in output_set:
+            fail(f"zed-cli/.zpkg.toml build.outputs must retain public binary {expected_target}")
+    leaked_private_outputs = sorted(
+        f"target/release/{name}"
+        for name in PRIVATE_CARGO_BINS
+        if f"target/release/{name}" in output_set
+    )
+    if leaked_private_outputs:
+        fail(
+            "zed-cli/.zpkg.toml must keep private Cargo binaries out of build.outputs: "
+            + ", ".join(leaked_private_outputs)
+        )
 
     e2e_manifest = e2e_toml.get(Path(".zpkg.toml"))
     if not isinstance(e2e_manifest, dict):
@@ -252,7 +312,8 @@ def main() -> None:
     print(
         "zed toolchain TOML audit passed: "
         f"zed={zed_head}, flags2env={flags_head}, zed_cli_package={zed_name}@{zed_version}, "
-        f"zed_cli_requirement={actual_cli_requirement}, zed_toml={len(zed_toml_paths)}, "
+        f"zed_cli_requirement={actual_cli_requirement}, public_bins={len(zed_bins)}, "
+        f"private_cargo_bins={len(PRIVATE_CARGO_BINS)}, zed_toml={len(zed_toml_paths)}, "
         f"e2e_toml={len(e2e_toml_paths)}, flag_specs={len(root_specs)}, dotenv=disabled"
     )
 

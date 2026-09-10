@@ -140,11 +140,32 @@ def main() -> None:
     zed_head = git_head(zed_root)
     flags_head = git_head(flags_root)
     zed_toml, zed_toml_paths = parse_toml_tree(zed_root)
-    _, e2e_toml_paths = parse_toml_tree(workflow.parents[2])
+    e2e_toml, e2e_toml_paths = parse_toml_tree(workflow.parents[2])
 
     cargo = zed_toml.get(Path("Cargo.toml"))
     if not isinstance(cargo, dict):
         fail("tracked zed-cli/Cargo.toml was not parsed")
+    cargo_package = cargo.get("package")
+    if not isinstance(cargo_package, dict):
+        fail("zed-cli/Cargo.toml has no [package] table")
+    cli_version = cargo_package.get("version")
+    if not isinstance(cli_version, str) or not cli_version:
+        fail(f"zed-cli/Cargo.toml package.version must be a non-empty string, got {cli_version!r}")
+
+    e2e_manifest = e2e_toml.get(Path(".zpkg.toml"))
+    if not isinstance(e2e_manifest, dict):
+        fail("tracked zed-e2e/.zpkg.toml was not parsed")
+    e2e_dependencies = e2e_manifest.get("dependencies")
+    if not isinstance(e2e_dependencies, dict):
+        fail("zed-e2e/.zpkg.toml has no [dependencies] table")
+    expected_cli_requirement = f"^{cli_version}"
+    actual_cli_requirement = e2e_dependencies.get("zed-pkg/zed-cli")
+    if actual_cli_requirement != expected_cli_requirement:
+        fail(
+            "zed-e2e/.zpkg.toml must consume the audited zed-cli package line: "
+            f"{actual_cli_requirement!r} != {expected_cli_requirement!r}"
+        )
+
     dependency = dependency_table(cargo)
     dependency_git = dependency.get("git")
     dependency_rev = dependency.get("rev")
@@ -187,7 +208,7 @@ def main() -> None:
 
     print(
         "zed toolchain TOML audit passed: "
-        f"zed={zed_head}, flags2env={flags_head}, "
+        f"zed={zed_head}, flags2env={flags_head}, zed_cli_requirement={actual_cli_requirement}, "
         f"zed_toml={len(zed_toml_paths)}, e2e_toml={len(e2e_toml_paths)}, "
         f"flag_specs={len(root_specs)}"
     )

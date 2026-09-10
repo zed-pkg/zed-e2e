@@ -10,7 +10,7 @@ on:
       zed_cli_ref:
         description: "zed-cli tag or SHA (tags preferred)"
         required: true
-        default: "66009989605607e503a8061206c08db06ebd51f0"
+        default: "9c6eff237de7ee926afda37bd0732d9c4667127f"
       flags_2_env_ref:
         description: "flags-2-env tag or SHA"
         required: true
@@ -87,6 +87,24 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Verify selected toolchain and parse tracked TOML
+        run: |
+          set -euo pipefail
+          python3 zed-e2e/scripts/check-zed-toolchain-toml.py \
+            --zed-cli-root zed-cli \
+            --flags-root flags-2-env \
+            --workflow zed-e2e/.github/workflows/tagged-e2e.yml
+          cargo metadata \
+            --manifest-path zed-cli/Cargo.toml \
+            --locked \
+            --no-deps \
+            --format-version 1 \
+            > "$RUNNER_TEMP/zed-cli-cargo-metadata.json"
+          test -s "$RUNNER_TEMP/zed-cli-cargo-metadata.json"
 
       - name: Build flags-2-env native parser
         working-directory: flags-2-env
@@ -107,8 +125,20 @@ jobs:
           npm run typecheck
           npm run test:harness
 
-      - name: Audit zed flags contract
-        run: flags-2-env/build/flags2env audit zed-cli/.cli-flags.toml
+      - name: Audit every zed CLI flags contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' specs < <(
+            find zed-cli -maxdepth 1 -type f \
+              \( -name '.cli-flags.toml' -o -name '.*-cli-flags.toml' \) \
+              -print0 | sort -z
+          )
+          test "${#specs[@]}" -ge 6
+          for spec in "${specs[@]}"; do
+            echo "auditing $spec"
+            flags-2-env/build/flags2env audit "$spec"
+          done
 
       - name: Run full end-to-end matrix
         working-directory: zed-e2e

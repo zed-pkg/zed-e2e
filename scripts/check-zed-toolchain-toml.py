@@ -236,10 +236,14 @@ def main() -> None:
         if not isinstance(contract, dict):
             fail(f"root CLI flag contract was not parsed: {name}")
         env_policy = contract.get("env")
-        if not isinstance(env_policy, dict) or env_policy.get("files") != []:
+        if (
+            not isinstance(env_policy, dict)
+            or env_policy.get("dotenv") is not False
+            or env_policy.get("files") != []
+        ):
             fail(
-                f"{name} must declare [env] files = [] so the selected flags2env parser cannot "
-                "implicitly load the caller working-directory .env"
+                f"{name} must declare [env] dotenv = false and files = [] so both the pinned "
+                "legacy-compatible parser and current flags2env disable caller dotenv loading"
             )
         parse_policy = contract.get("parse")
         if not isinstance(parse_policy, dict) or parse_policy.get("allow_unknown") is not False:

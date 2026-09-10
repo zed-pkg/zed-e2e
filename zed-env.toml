@@ -1,0 +1,13 @@
+schema = 2
+
+[tasks.typecheck]
+description = "Install the locked Node toolchain and typecheck the E2E harness."
+run = ["npm ci", "npm run typecheck"]
+
+[tasks.harness]
+description = "Install the locked Node toolchain and run the unit-level E2E harness tests."
+run = ["npm ci", "npm run test:harness"]
+
+[tasks.test]
+description = "Run the package-level Zed test contract without starting the external browser/server stack."
+run = ["npm ci", "npm run typecheck", "npm run test:harness"]

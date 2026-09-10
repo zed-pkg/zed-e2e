@@ -26,7 +26,6 @@ concurrency:
 env:
   ZED_CLI_SHA: 7e5ac1897a872223f8316ef1c3342a2fa1982504
   ZED_INTERFACES_SHA: dc0e0a0620b9462817950b552d3d334a184b1cb1
-  FLAGS2ENV_SHA: 2f62e40932a0fcb8b9bf1b4c84473e34fa3c51c7
   CARGO_TERM_COLOR: always
   PYTHONDONTWRITEBYTECODE: '1'
 
@@ -123,13 +122,33 @@ jobs:
           test "$cli_revision" = "$ZED_CLI_SHA"
           test "$interfaces_revision" = "$ZED_INTERFACES_SHA"
           grep -F "rev = \"$ZED_INTERFACES_SHA\"" zed-cli/Cargo.toml
-          grep -F "rev = \"$FLAGS2ENV_SHA\"" zed-cli/Cargo.toml
+
+          read -r flags2env_source flags2env_revision < <(
+            python3 - <<'PY'
+          import pathlib
+          import re
+          import tomllib
+
+          cargo = tomllib.loads(pathlib.Path("zed-cli/Cargo.toml").read_text(encoding="utf-8"))
+          dependency = cargo.get("dependencies", {}).get("flags2env")
+          if not isinstance(dependency, dict):
+              raise SystemExit("zed-cli Cargo.toml must declare flags2env as an exact Git dependency")
+          source = dependency.get("git")
+          revision = dependency.get("rev")
+          if not isinstance(source, str) or not source.startswith("https://github.com/"):
+              raise SystemExit("flags2env Git source must be an explicit GitHub repository URL")
+          if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+              raise SystemExit("flags2env revision must be a full lowercase commit SHA")
+          print(source, revision)
+          PY
+          )
 
           {
             printf 'e2e_commit=%s\n' "$e2e_revision"
             printf 'zed_cli_commit=%s\n' "$cli_revision"
             printf 'zed_interfaces_commit=%s\n' "$interfaces_revision"
-            printf 'flags2env_commit=%s\n' "$FLAGS2ENV_SHA"
+            printf 'flags2env_source=%s\n' "$flags2env_source"
+            printf 'flags2env_commit=%s\n' "$flags2env_revision"
             printf 'runner_os=%s\n' '${{ runner.os }}'
             printf 'runner_arch=%s\n' '${{ runner.arch }}'
             printf 'rustc=%s\n' "$(rustc --version)"

@@ -77,7 +77,37 @@ jobs:
           path: flags-2-env
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Install Rust toolchain declared by selected zed-cli
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain="$(python3 - <<'PY'
+          import tomllib
+          with open("zed-cli/rust-toolchain.toml", "rb") as source:
+              print(tomllib.load(source)["toolchain"]["channel"])
+          PY
+          )"
+          mapfile -t components < <(python3 - <<'PY'
+          import tomllib
+          with open("zed-cli/rust-toolchain.toml", "rb") as source:
+              values = tomllib.load(source)["toolchain"].get("components", [])
+          for value in values:
+              print(value)
+          PY
+          )
+          install_args=(toolchain install "$toolchain" --profile minimal --no-self-update)
+          for component in "${components[@]}"; do
+            install_args+=(--component "$component")
+          done
+          rustup "${install_args[@]}"
+          rustup default "$toolchain"
+          printf 'RUSTUP_TOOLCHAIN=%s\n' "$toolchain" >> "$GITHUB_ENV"
+          rustup run "$toolchain" rustc --version
+
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
           workspaces: |
@@ -87,9 +117,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
-        with:
-          python-version: '3.12'
 
       - name: Verify selected toolchain and parse tracked TOML
         run: |

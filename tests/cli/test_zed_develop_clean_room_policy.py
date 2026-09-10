@@ -11,7 +11,7 @@ POLICY_TEST = ROOT / "tests" / "cli" / "test_zed_develop_clean_room_policy.py"
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 USES = re.compile(r"(?m)^\s*uses:\s*([^\s@]+)@([^\s#]+)")
 ENV_PIN = re.compile(
-    r"(?m)^\s{2}(ZED_CLI_SHA|ZED_INTERFACES_SHA|FLAGS2ENV_SHA):\s*([0-9a-f]+)\s*$"
+    r"(?m)^\s{2}(ZED_CLI_SHA|ZED_INTERFACES_SHA):\s*([0-9a-f]+)\s*$"
 )
 
 
@@ -55,15 +55,16 @@ class CleanRoomWorkflowPolicyTests(unittest.TestCase):
             with self.subTest(action=action):
                 self.assertRegex(revision, FULL_SHA)
 
-    def test_candidate_contract_and_parser_revisions_are_exact(self) -> None:
+    def test_candidate_revisions_are_exact_and_parser_revision_is_derived(self) -> None:
         pins = dict(ENV_PIN.findall(self.workflow))
-        self.assertEqual(
-            set(pins),
-            {"ZED_CLI_SHA", "ZED_INTERFACES_SHA", "FLAGS2ENV_SHA"},
-        )
+        self.assertEqual(set(pins), {"ZED_CLI_SHA", "ZED_INTERFACES_SHA"})
         for name, revision in pins.items():
             with self.subTest(name=name):
                 self.assertRegex(revision, FULL_SHA)
+        self.assertNotRegex(
+            self.workflow,
+            r"(?m)^\s{2}FLAGS2ENV_SHA:\s*[0-9a-f]{40}\s*$",
+        )
         self.assertIn("ref: ${{ env.ZED_CLI_SHA }}", self.workflow)
         self.assertIn("ref: ${{ env.ZED_INTERFACES_SHA }}", self.workflow)
         self.assertIn(
@@ -71,7 +72,15 @@ class CleanRoomWorkflowPolicyTests(unittest.TestCase):
             self.workflow,
         )
         self.assertIn('grep -F "rev = \\"$ZED_INTERFACES_SHA\\""', self.workflow)
-        self.assertIn('grep -F "rev = \\"$FLAGS2ENV_SHA\\""', self.workflow)
+        for required in (
+            'pathlib.Path("zed-cli/Cargo.toml")',
+            'get("flags2env")',
+            're.fullmatch(r"[0-9a-f]{40}", revision)',
+            "flags2env_source",
+            "flags2env_revision",
+            "flags2env_commit=%s",
+        ):
+            self.assertIn(required, self.workflow)
 
     def test_linux_and_macos_matrix_is_explicit_and_bounded(self) -> None:
         self.assertIn("ubuntu-24.04", self.workflow)

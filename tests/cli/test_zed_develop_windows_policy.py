@@ -12,7 +12,7 @@ POLICY = ROOT / "tests" / "cli" / "test_zed_develop_windows_policy.py"
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 USES = re.compile(r"(?m)^\s*uses:\s*([^\s@]+)@([^\s#]+)")
 ENV_PIN = re.compile(
-    r"(?m)^\s{2}(ZED_CLI_SHA|ZED_INTERFACES_SHA|FLAGS2ENV_SHA):\s*([0-9a-f]+)\s*$"
+    r"(?m)^\s{2}(ZED_CLI_SHA|ZED_INTERFACES_SHA):\s*([0-9a-f]+)\s*$"
 )
 
 
@@ -62,27 +62,36 @@ class WindowsCleanRoomWorkflowPolicyTests(unittest.TestCase):
             with self.subTest(action=action):
                 self.assertRegex(revision, FULL_SHA)
 
-    def test_cli_interface_and_flags_contracts_are_pinned(self) -> None:
+    def test_cli_and_interface_are_pinned_and_flags_contract_is_derived(self) -> None:
         pins = dict(ENV_PIN.findall(self.workflow))
-        self.assertEqual(
-            set(pins),
-            {"ZED_CLI_SHA", "ZED_INTERFACES_SHA", "FLAGS2ENV_SHA"},
-        )
+        self.assertEqual(set(pins), {"ZED_CLI_SHA", "ZED_INTERFACES_SHA"})
         for name, revision in pins.items():
             with self.subTest(name=name):
                 self.assertRegex(revision, FULL_SHA)
+        self.assertNotRegex(
+            self.workflow,
+            r"(?m)^\s{2}FLAGS2ENV_SHA:\s*[0-9a-f]{40}\s*$",
+        )
         self.assertIn("ref: ${{ env.ZED_CLI_SHA }}", self.workflow)
         self.assertIn("ref: ${{ env.ZED_INTERFACES_SHA }}", self.workflow)
         self.assertIn(
             "$expectedInterface = 'rev = \"' + $env:ZED_INTERFACES_SHA + '\"'",
             self.workflow,
         )
-        self.assertIn(
-            "$expectedFlags = 'rev = \"' + $env:FLAGS2ENV_SHA + '\"'",
-            self.workflow,
-        )
         self.assertIn("$cargo.Contains($expectedInterface)", self.workflow)
-        self.assertIn("$cargo.Contains($expectedFlags)", self.workflow)
+        for required in (
+            "zed-cli/Cargo.toml",
+            "get('flags2env')",
+            "re.fullmatch(r'[0-9a-f]{40}',revision)",
+            "$flags2envSource",
+            "$flags2envRevision",
+            "$env:GITHUB_ENV",
+            '"flags2env_commit=$flags2envRevision"',
+            '--flags2env-sha "$env:FLAGS2ENV_SHA"',
+        ):
+            self.assertIn(required, self.workflow)
+        self.assertNotIn("$expectedFlags =", self.workflow)
+        self.assertNotIn("$cargo.Contains($expectedFlags)", self.workflow)
 
     def test_workflow_builds_the_real_locked_windows_candidate(self) -> None:
         self.assertIn("cargo build", self.workflow)

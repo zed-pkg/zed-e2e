@@ -93,6 +93,19 @@ class WindowsCleanRoomWorkflowPolicyTests(unittest.TestCase):
         self.assertNotIn("$expectedFlags =", self.workflow)
         self.assertNotIn("$cargo.Contains($expectedFlags)", self.workflow)
 
+    def test_rust_toolchain_is_derived_from_the_exact_cli_candidate(self) -> None:
+        for required in (
+            "zed-cli/rust-toolchain.toml",
+            "get('channel')",
+            "rustup toolchain install $toolchain --profile minimal",
+            "rustup default $toolchain",
+            "ZED_RUST_TOOLCHAIN=$toolchain",
+            '"rust_toolchain=$env:ZED_RUST_TOOLCHAIN"',
+            "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+        ):
+            self.assertIn(required, self.workflow)
+        self.assertNotIn("toolchain: stable", self.workflow)
+
     def test_workflow_builds_the_real_locked_windows_candidate(self) -> None:
         self.assertIn("cargo build", self.workflow)
         self.assertIn("--locked", self.workflow)

@@ -129,4 +129,6 @@ jobs:
           set -euo pipefail
           git -C zed-e2e diff --exit-code HEAD
           git -C zed-cli diff --exit-code HEAD
-          git -C flags-2-env diff --exit-code HEAD
+          # `make all` deliberately rebuilds tracked compatibility artifacts under build/.
+          # The validation invariant is that no source/config outside that build output changes.
+          git -C flags-2-env diff --exit-code HEAD -- . ':(exclude)build/**'

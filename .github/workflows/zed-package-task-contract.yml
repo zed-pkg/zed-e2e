@@ -48,6 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           zed validate
+          grep -Fqx '"zed-pkg/zed-cli" = "^0.3.0"' .zpkg.toml
           zed task list
           zed task info typecheck
           zed task info harness

@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - '.zpkg.toml'
+      - '**/*.toml'
+      - '**/*.toml.example'
       - '.github/workflows/tagged-e2e.yml'
       - '.github/workflows/zed-toolchain-toml.yml'
       - 'scripts/check-zed-toolchain-toml.py'
@@ -11,6 +13,8 @@ on:
     branches: [main]
     paths:
       - '.zpkg.toml'
+      - '**/*.toml'
+      - '**/*.toml.example'
       - '.github/workflows/tagged-e2e.yml'
       - '.github/workflows/zed-toolchain-toml.yml'
       - 'scripts/check-zed-toolchain-toml.py'

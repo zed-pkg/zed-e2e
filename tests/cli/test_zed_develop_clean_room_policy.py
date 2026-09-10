@@ -82,6 +82,19 @@ class CleanRoomWorkflowPolicyTests(unittest.TestCase):
         ):
             self.assertIn(required, self.workflow)
 
+    def test_rust_toolchain_is_derived_from_the_exact_cli_candidate(self) -> None:
+        for required in (
+            'pathlib.Path("zed-cli/rust-toolchain.toml")',
+            'get("channel")',
+            'rustup toolchain install "$toolchain" --profile minimal',
+            'rustup default "$toolchain"',
+            'ZED_RUST_TOOLCHAIN=%s',
+            'rust_toolchain=%s',
+            '[[ "$toolchain" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]',
+        ):
+            self.assertIn(required, self.workflow)
+        self.assertNotIn("toolchain: stable", self.workflow)
+
     def test_linux_and_macos_matrix_is_explicit_and_bounded(self) -> None:
         self.assertIn("ubuntu-24.04", self.workflow)
         self.assertIn("macos-15", self.workflow)

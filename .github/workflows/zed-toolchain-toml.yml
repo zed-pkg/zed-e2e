@@ -9,6 +9,7 @@ on:
       - '.github/workflows/tagged-e2e.yml'
       - '.github/workflows/zed-toolchain-toml.yml'
       - 'scripts/check-zed-toolchain-toml.py'
+      - 'scripts/check-zed-package-tasks.py'
   push:
     branches: [main]
     paths:
@@ -18,6 +19,7 @@ on:
       - '.github/workflows/tagged-e2e.yml'
       - '.github/workflows/zed-toolchain-toml.yml'
       - 'scripts/check-zed-toolchain-toml.py'
+      - 'scripts/check-zed-package-tasks.py'
   workflow_dispatch:
 
 permissions:
@@ -93,9 +95,10 @@ jobs:
           printf 'RUSTUP_TOOLCHAIN=%s\n' "$toolchain" >> "$GITHUB_ENV"
           rustup run "$toolchain" rustc --version
 
-      - name: Parse all tracked TOML and verify the coupled toolchain pins
+      - name: Parse tracked TOML and verify package/toolchain contracts
         run: |
           set -euo pipefail
+          python3 zed-e2e/scripts/check-zed-package-tasks.py
           python3 zed-e2e/scripts/check-zed-toolchain-toml.py \
             --zed-cli-root zed-cli \
             --flags-root flags-2-env \

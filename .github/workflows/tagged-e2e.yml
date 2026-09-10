@@ -71,7 +71,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          repository: ORESoftware/flags-2-env
+          repository: flags-2-env/flags-2-env
           ref: ${{ inputs.flags_2_env_ref || '682bfddaa43fcab839b045875ef5dfcfc721d343' }}
           path: flags-2-env
           persist-credentials: false

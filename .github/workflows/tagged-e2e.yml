@@ -14,7 +14,7 @@ on:
       flags_2_env_ref:
         description: "flags-2-env tag or SHA"
         required: true
-        default: "682bfddaa43fcab839b045875ef5dfcfc721d343"
+        default: "2946224fb3a1bd84c0e39146b24f5f1ca8d69862"
       zed_interfaces_ref:
         description: "zed-interfaces tag, SHA, or branch"
         required: true
@@ -72,7 +72,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: flags-2-env/flags-2-env
-          ref: ${{ inputs.flags_2_env_ref || '682bfddaa43fcab839b045875ef5dfcfc721d343' }}
+          # Keep the default audit/parser revision identical to zed-cli's
+          # Cargo.toml runtime dependency. Explicit dispatches may override both
+          # refs together for an upgrade candidate.
+          ref: ${{ inputs.flags_2_env_ref || '2946224fb3a1bd84c0e39146b24f5f1ca8d69862' }}
           path: flags-2-env
           persist-credentials: false
 

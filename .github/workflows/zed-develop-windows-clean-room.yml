@@ -28,7 +28,6 @@ concurrency:
 env:
   ZED_CLI_SHA: fd3b3e487b2bdd129dd67403ad51f7299cfe6828
   ZED_INTERFACES_SHA: c2e049006453c26ca8ca291783f681fce75cb01f
-  FLAGS2ENV_SHA: 2f62e40932a0fcb8b9bf1b4c84473e34fa3c51c7
   CARGO_TERM_COLOR: always
   PYTHONDONTWRITEBYTECODE: '1'
 
@@ -108,15 +107,20 @@ jobs:
 
           $cargo = Get-Content -Raw zed-cli/Cargo.toml
           $expectedInterface = 'rev = "' + $env:ZED_INTERFACES_SHA + '"'
-          $expectedFlags = 'rev = "' + $env:FLAGS2ENV_SHA + '"'
           if (-not $cargo.Contains($expectedInterface)) { throw 'zed-interfaces pin drifted' }
-          if (-not $cargo.Contains($expectedFlags)) { throw 'flags2env pin drifted' }
+
+          $pinJson = python -c "import json,pathlib,re,tomllib; cargo=tomllib.loads(pathlib.Path('zed-cli/Cargo.toml').read_text(encoding='utf-8')); dep=cargo.get('dependencies',{}).get('flags2env'); assert isinstance(dep,dict), 'flags2env must be an exact Git dependency'; source=dep.get('git'); revision=dep.get('rev'); assert isinstance(source,str) and source.startswith('https://github.com/'), 'flags2env source must be an explicit GitHub URL'; assert isinstance(revision,str) and re.fullmatch(r'[0-9a-f]{40}',revision), 'flags2env revision must be a full lowercase commit SHA'; print(json.dumps({'source':source,'revision':revision}))"
+          $pin = $pinJson | ConvertFrom-Json
+          $flags2envSource = $pin.source
+          $flags2envRevision = $pin.revision
+          "FLAGS2ENV_SHA=$flags2envRevision" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
           @(
             "e2e_commit=$e2eRevision",
             "zed_cli_commit=$cliRevision",
             "zed_interfaces_commit=$interfacesRevision",
-            "flags2env_commit=$env:FLAGS2ENV_SHA",
+            "flags2env_source=$flags2envSource",
+            "flags2env_commit=$flags2envRevision",
             "runner_os=${{ runner.os }}",
             "runner_arch=${{ runner.arch }}",
             "rustc=$(rustc --version)",

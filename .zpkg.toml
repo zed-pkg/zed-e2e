@@ -49,5 +49,4 @@ exclude = [
 ]
 
 [scripts]
-typecheck = "npm ci && npm run typecheck"
-harness = "npm ci && npm run test:harness"
+test = "npm ci && npm run typecheck && npm run test:harness"

@@ -24,7 +24,7 @@ on:
         required: true
         default: "3d2d4c98024e5bf718dc79c2648bd10d7759a31c"
       zed_web_ref:
-        description: "zed-web-server.rs tag or SHA (tags preferred)"
+        description: "zed-web-server.rs tag, SHA, or branch"
         required: true
         default: "b669850d317ebc07a8960aea4014706c55ffad22"
 

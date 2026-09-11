@@ -25,17 +25,24 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-  # Immutable product composition. The web pin is the exact main-branch merge
-  # that preserves restored filter state and pointer-safe wrapped popovers.
-  # Other inputs retain the established contract/artifact pins.
-  ZED_INTERFACES_CANDIDATE: 4b87e425b04777b0ee413971dc1df805d24f295f
-  ZED_GRAPH_INTERFACES_CANDIDATE: 7d31f80dd8a310f218931165a3ad636a2f32b932
-  ZED_LIB_CORE_CANDIDATE: c3d486a1519381276fbec02aa25247f542924443
-  ZED_WEB_CORE_CANDIDATE: 9ca75929b0be79aaa0b8af60c2810a8ac0c34198
-  ZED_API_CANDIDATE: 7e280f7d6a23432b5414ffeb591ca77737b1ce37
-  ZED_WEB_CANDIDATE: ad0207f376a3de341b3f282e616b29e24825baec
-  ZED_CLI_CANDIDATE: 3265041478d6873ce3815b11930bd1e8e8004837
-  ZED_CLIENTS_CANDIDATE: 799c967f44fdd7932d18432257a2bd46eff4e33a
+  # Test the actually admitted dependency graph, not an artificial single-SHA
+  # interfaces world. Each consumer below keeps its own immutable producer pin;
+  # this job verifies those edges before booting the composed product stack.
+  ZED_CLIENTS_INTERFACES_REV: 3c54298fc7a8c1b2f9c1d74f588c6118b38f197e
+  ZED_LIB_CORE_INTERFACES_REV: 7d31f80dd8a310f218931165a3ad636a2f32b932
+  ZED_API_INTERFACES_REV: 4b87e425b04777b0ee413971dc1df805d24f295f
+  ZED_WEB_INTERFACES_REV: 7d31f80dd8a310f218931165a3ad636a2f32b932
+  ZED_API_LIB_CORE_REV: c3d486a1519381276fbec02aa25247f542924443
+  ZED_WEB_LIB_CORE_REV: 9ca75929b0be79aaa0b8af60c2810a8ac0c34198
+  ZED_CLI_INTERFACES_REV: 3c54298fc7a8c1b2f9c1d74f588c6118b38f197e
+  ZED_CLI_LIB_CORE_REV: eac0878750332b031bc12f6040b6a795a17e7417
+  ZED_CLI_CLIENTS_REV: b32e089caea772f166204fb1c7bcaad6f56942fe
+  ORES_MIDDLEWARE_REV: c759246bbd207841aa8fe9150214ee922c751b94
+  ZED_LIB_CORE_CANDIDATE: ff02d3ee5b4d6a2ea913e0ee19a8c21d334a11c9
+  ZED_API_CANDIDATE: c824a592350d644988a8899a0928b48051afb396
+  ZED_WEB_CANDIDATE: 66493865ae0bb14367d2e529bf6f359756eb6d06
+  ZED_CLI_CANDIDATE: de20d3a1eee31f608556daaf461d66be76fc3e5e
+  ZED_CLIENTS_CANDIDATE: e53dca82e6c9d946a650bf453f48df0072221e10
 
 jobs:
   graph-candidate:
@@ -49,11 +56,11 @@ jobs:
         with:
           path: zed-e2e
 
-      - name: Checkout zed-interfaces candidate
+      - name: Checkout client-admitted zed-interfaces revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-interfaces
-          ref: ${{ env.ZED_INTERFACES_CANDIDATE }}
+          ref: ${{ env.ZED_CLIENTS_INTERFACES_REV }}
           path: zed-interfaces
 
       - name: Checkout zed-api-server candidate
@@ -91,7 +98,7 @@ jobs:
           ref: ${{ env.ZED_CLIENTS_CANDIDATE }}
           path: zed-clients
 
-      - name: Verify immutable candidate provenance
+      - name: Verify immutable candidate provenance and dependency edges
         shell: bash
         run: |
           python3 - <<'PY'
@@ -100,7 +107,7 @@ jobs:
           import subprocess
 
           candidates = {
-              "zed-interfaces": os.environ["ZED_INTERFACES_CANDIDATE"],
+              "zed-interfaces": os.environ["ZED_CLIENTS_INTERFACES_REV"],
               "zed-lib-core": os.environ["ZED_LIB_CORE_CANDIDATE"],
               "zed-api-server.rs": os.environ["ZED_API_CANDIDATE"],
               "zed-web-server.rs": os.environ["ZED_WEB_CANDIDATE"],
@@ -117,19 +124,41 @@ jobs:
                       f"{repository} checkout drifted: expected {expected}, got {actual}"
                   )
 
-          graph_interfaces = os.environ["ZED_GRAPH_INTERFACES_CANDIDATE"]
-          api_interfaces = os.environ["ZED_INTERFACES_CANDIDATE"]
-          core = os.environ["ZED_LIB_CORE_CANDIDATE"]
-          web_core = os.environ["ZED_WEB_CORE_CANDIDATE"]
           required_pins = {
-              "zed-lib-core/src/rust-orm/Cargo.toml": [graph_interfaces],
-              "zed-api-server.rs/Cargo.toml": [api_interfaces, core],
-              "zed-api-server.rs/Cargo.lock": [api_interfaces, core],
-              "zed-web-server.rs/Cargo.toml": [graph_interfaces, web_core],
-              "zed-web-server.rs/Cargo.lock": [graph_interfaces, web_core],
-              "zed-cli/Cargo.toml": [graph_interfaces],
-              "zed-cli/Cargo.lock": [graph_interfaces],
-              "zed-clients/.github/workflows/ci.yml": [graph_interfaces],
+              "zed-lib-core/src/rust-orm/Cargo.toml": [
+                  os.environ["ZED_LIB_CORE_INTERFACES_REV"],
+              ],
+              "zed-api-server.rs/Cargo.toml": [
+                  os.environ["ZED_API_INTERFACES_REV"],
+                  os.environ["ZED_API_LIB_CORE_REV"],
+                  os.environ["ORES_MIDDLEWARE_REV"],
+              ],
+              "zed-api-server.rs/Cargo.lock": [
+                  os.environ["ZED_API_INTERFACES_REV"],
+                  os.environ["ZED_API_LIB_CORE_REV"],
+                  os.environ["ORES_MIDDLEWARE_REV"],
+              ],
+              "zed-web-server.rs/Cargo.toml": [
+                  os.environ["ZED_WEB_INTERFACES_REV"],
+                  os.environ["ZED_WEB_LIB_CORE_REV"],
+              ],
+              "zed-web-server.rs/Cargo.lock": [
+                  os.environ["ZED_WEB_INTERFACES_REV"],
+                  os.environ["ZED_WEB_LIB_CORE_REV"],
+              ],
+              "zed-cli/Cargo.toml": [
+                  os.environ["ZED_CLI_INTERFACES_REV"],
+                  os.environ["ZED_CLI_LIB_CORE_REV"],
+                  os.environ["ZED_CLI_CLIENTS_REV"],
+              ],
+              "zed-cli/Cargo.lock": [
+                  os.environ["ZED_CLI_INTERFACES_REV"],
+                  os.environ["ZED_CLI_LIB_CORE_REV"],
+                  os.environ["ZED_CLI_CLIENTS_REV"],
+              ],
+              "zed-clients/.github/workflows/ci.yml": [
+                  os.environ["ZED_CLIENTS_INTERFACES_REV"],
+              ],
           }
           for filename, expected_revisions in required_pins.items():
               content = pathlib.Path(filename).read_text()

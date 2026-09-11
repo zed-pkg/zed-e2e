@@ -14,8 +14,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  ZED_E2E_API_REF: main
-  ZED_E2E_CLI_REF: main
+  ZED_INTERFACES_REV: 0c2ffa7be791a44c8aa2a69ab4b1ea87aab4729c
+  ZED_CLI_REV: 01215bfab044a35a51ca8a076fd90d5c31ed45da
+  ZED_API_REV: 579a1fc7b267f65003be990827a14c06a90d8b5d
+  ZED_WEB_REV: d3b9f0e44e559ec563f8228d28bf772db348d437
 
 defaults:
   run:
@@ -35,39 +37,50 @@ jobs:
           persist-credentials: false
           show-progress: false
 
-      - name: Check out zed-interfaces
+      - name: Check out admitted zed-interfaces revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-interfaces
+          ref: ${{ env.ZED_INTERFACES_REV }}
           path: zed-interfaces
           persist-credentials: false
           show-progress: false
 
-      - name: Check out zed-cli
+      - name: Check out admitted zed-cli revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-cli
-          ref: ${{ env.ZED_E2E_CLI_REF }}
+          ref: ${{ env.ZED_CLI_REV }}
           path: zed-cli
           persist-credentials: false
           show-progress: false
 
-      - name: Check out zed-api-server.rs
+      - name: Check out admitted zed-api-server.rs revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-api-server.rs
-          ref: ${{ env.ZED_E2E_API_REF }}
+          ref: ${{ env.ZED_API_REV }}
           path: zed-api-server.rs
           persist-credentials: false
           show-progress: false
 
-      - name: Check out zed-web-server.rs
+      - name: Check out admitted zed-web-server.rs revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-web-server.rs
+          ref: ${{ env.ZED_WEB_REV }}
           path: zed-web-server.rs
           persist-credentials: false
           show-progress: false
+
+      - name: Verify immutable source provenance
+        run: |
+          set -euo pipefail
+          test "$(git -C zed-e2e rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git -C zed-interfaces rev-parse HEAD)" = "$ZED_INTERFACES_REV"
+          test "$(git -C zed-cli rev-parse HEAD)" = "$ZED_CLI_REV"
+          test "$(git -C zed-api-server.rs rev-parse HEAD)" = "$ZED_API_REV"
+          test "$(git -C zed-web-server.rs rev-parse HEAD)" = "$ZED_WEB_REV"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "zed.e2e.toolchain-contract.schema.json",
+  "$defs": {
+    "ZedToolchainContract": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ZedToolchainContract",
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "zed.e2e/toolchain-contract/v1"
+        },
+        "producerRevision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "flags2envRevision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "packageName": {
+          "type": "string",
+          "const": "zed-cli"
+        },
+        "packageVersion": {
+          "type": "string"
+        },
+        "packageRequirement": {
+          "type": "string"
+        },
+        "flagSpecsCount": {
+          "type": "integer",
+          "const": 6
+        },
+        "dotenvDisabled": {
+          "type": "boolean",
+          "const": true
+        },
+        "strictUnknownOptions": {
+          "type": "boolean",
+          "const": true
+        },
+        "publicBinCount": {
+          "type": "integer",
+          "const": 3
+        },
+        "privateCargoBinCount": {
+          "type": "integer",
+          "const": 1
+        },
+        "legacyFlagsAuthorityPresent": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "required": [
+        "schema",
+        "producerRevision",
+        "flags2envRevision",
+        "packageName",
+        "packageVersion",
+        "packageRequirement",
+        "flagSpecsCount",
+        "dotenvDisabled",
+        "strictUnknownOptions",
+        "publicBinCount",
+        "privateCargoBinCount",
+        "legacyFlagsAuthorityPresent"
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

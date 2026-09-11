@@ -117,7 +117,8 @@ async function startHarness() {
 }
 
 async function artifactDirectory(framework) {
-  const directory = path.join(process.cwd(), 'artifacts', framework);
+  const directory = process.env.BROWSER_HARNESS_ARTIFACT_DIR
+    ?? path.join(process.cwd(), 'artifacts', framework);
   await mkdir(directory, { recursive: true });
   return directory;
 }

@@ -14,9 +14,9 @@ test.describe("zed-web-server routes and empty states", () => {
     await publishFixture({ org, name: "alpha", version: "1.0.0", description: "org page fixture" }, { token, allowExisting: true });
   });
 
-  test("org page lists the org's packages", async ({ page }) => {
-    await page.goto(`${WEB_URL}/orgs/${org}`);
-    await expect(page.locator("body")).toContainText("alpha");
+  test("anonymous org pages do not disclose package membership", async ({ page }) => {
+    const res = await page.goto(`${WEB_URL}/orgs/${org}`);
+    expect(res?.status()).toBe(404);
   });
 
   test("unknown org page returns 404", async ({ page }) => {
@@ -33,7 +33,9 @@ test.describe("zed-web-server routes and empty states", () => {
   test("a no-match search shows the empty state", async ({ page }) => {
     await page.goto(`${WEB_URL}/search`);
     await page.fill("#q", "zzz-nothing-matches-this-zzz");
-    await expect(page.locator("#results")).toContainText("no matches", { timeout: 10_000 });
+    await expect(page.locator("#results")).toContainText("No packages matched.", {
+      timeout: 10_000,
+    });
   });
 
   test("responses carry HSTS and a hardened CSP", async ({ page }) => {

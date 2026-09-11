@@ -55,17 +55,6 @@ primary suite checks the ordinary Git-backed path and a runtime with `git` delib
 `PATH`, then opens each successful `tar.gz` artifact to prove `secret.env` was not published. The
 nested suite checks ignored files inside initialized submodules, root legal files copied into
 polyglot targets, and the review requirements and archive behavior of `.zedinclude`.
-Run the focused package-publication boundary against a locally built CLI:
-
-```bash
-cargo build --locked --manifest-path ../zed-cli/Cargo.toml --bin zed
-ZED_BIN="$PWD/../zed-cli/target/debug/zed" \
-  bash suites/cli/pack-publication-boundary.sh
-```
-
-The focused suite creates isolated repositories and package state under a temporary directory. It
-checks the ordinary Git-backed path and a runtime with `git` deliberately absent from `PATH`, then
-opens each successful `tar.gz` artifact to prove `secret.env` was not published.
 
 Each browser suite boots (and tears down) the stack itself. To reuse one stack across suites:
 
@@ -99,8 +88,6 @@ without any commit landing here. So beyond push/PR, CI also runs:
 - **weekly publication-boundary contract** (Mondays at 07:17 UTC) — rebuilds
   `zed-cli` from `main` and exercises primary, nested-repository, polyglot
   legal-file, generated-input, Git-backed, and Git-less package safety paths.
-  `zed-cli` from `main` and exercises both Git-backed and Git-less package
-  safety paths.
 
 A failure here with no zed-e2e commit behind it usually means version skew:
 a sibling's `main` changed under the suite.

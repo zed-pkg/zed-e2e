@@ -98,13 +98,13 @@ jobs:
       matrix:
         include:
           - name: aws-registry
-            url: https://registry.aws.zpkg.tech/healthz
+            url: https://registry.aws.zpkg.net/healthz
           - name: aws-web
-            url: https://aws.zpkg.tech/healthz
+            url: https://web.aws.zpkg.net/healthz
           - name: hetzner-registry
-            url: https://registry.hetzner.zpkg.tech/healthz
+            url: https://registry.hetzner.zpkg.net/healthz
           - name: hetzner-web
-            url: https://hetzner.zpkg.tech/healthz
+            url: https://web.hetzner.zpkg.net/healthz
     env:
       EDGE_ENFORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.enforce || false }}
     steps:

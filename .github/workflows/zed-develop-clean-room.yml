@@ -26,7 +26,6 @@ concurrency:
 env:
   ZED_CLI_SHA: 7e5ac1897a872223f8316ef1c3342a2fa1982504
   ZED_INTERFACES_SHA: dc0e0a0620b9462817950b552d3d334a184b1cb1
-  FLAGS2ENV_SHA: 2f62e40932a0fcb8b9bf1b4c84473e34fa3c51c7
   CARGO_TERM_COLOR: always
   PYTHONDONTWRITEBYTECODE: '1'
 
@@ -72,15 +71,34 @@ jobs:
           persist-credentials: false
           show-progress: false
 
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-        with:
-          toolchain: stable
-
       - name: Install Python 3.13
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.13'
+
+      - name: Install candidate-declared Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain="$(python3 - <<'PY'
+          import pathlib
+          import tomllib
+
+          manifest = tomllib.loads(pathlib.Path("zed-cli/rust-toolchain.toml").read_text(encoding="utf-8"))
+          channel = manifest.get("toolchain", {}).get("channel")
+          if not isinstance(channel, str) or not channel.strip():
+              raise SystemExit("zed-cli/rust-toolchain.toml must declare toolchain.channel")
+          print(channel.strip())
+          PY
+          )"
+          rustup toolchain install "$toolchain" --profile minimal
+          rustup default "$toolchain"
+          if [[ "$toolchain" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            test "$(rustc --version | awk '{print $2}')" = "$toolchain"
+          fi
+          printf 'ZED_RUST_TOOLCHAIN=%s\n' "$toolchain" >> "$GITHUB_ENV"
+          rustc --version --verbose
+          cargo --version --verbose
 
       - name: Audit the workflow policy without mutating the checkout
         shell: bash
@@ -123,13 +141,34 @@ jobs:
           test "$cli_revision" = "$ZED_CLI_SHA"
           test "$interfaces_revision" = "$ZED_INTERFACES_SHA"
           grep -F "rev = \"$ZED_INTERFACES_SHA\"" zed-cli/Cargo.toml
-          grep -F "rev = \"$FLAGS2ENV_SHA\"" zed-cli/Cargo.toml
+
+          read -r flags2env_source flags2env_revision < <(
+            python3 - <<'PY'
+          import pathlib
+          import re
+          import tomllib
+
+          cargo = tomllib.loads(pathlib.Path("zed-cli/Cargo.toml").read_text(encoding="utf-8"))
+          dependency = cargo.get("dependencies", {}).get("flags2env")
+          if not isinstance(dependency, dict):
+              raise SystemExit("zed-cli Cargo.toml must declare flags2env as an exact Git dependency")
+          source = dependency.get("git")
+          revision = dependency.get("rev")
+          if not isinstance(source, str) or not source.startswith("https://github.com/"):
+              raise SystemExit("flags2env Git source must be an explicit GitHub repository URL")
+          if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+              raise SystemExit("flags2env revision must be a full lowercase commit SHA")
+          print(source, revision)
+          PY
+          )
 
           {
             printf 'e2e_commit=%s\n' "$e2e_revision"
             printf 'zed_cli_commit=%s\n' "$cli_revision"
             printf 'zed_interfaces_commit=%s\n' "$interfaces_revision"
-            printf 'flags2env_commit=%s\n' "$FLAGS2ENV_SHA"
+            printf 'flags2env_source=%s\n' "$flags2env_source"
+            printf 'flags2env_commit=%s\n' "$flags2env_revision"
+            printf 'rust_toolchain=%s\n' "$ZED_RUST_TOOLCHAIN"
             printf 'runner_os=%s\n' '${{ runner.os }}'
             printf 'runner_arch=%s\n' '${{ runner.arch }}'
             printf 'rustc=%s\n' "$(rustc --version)"

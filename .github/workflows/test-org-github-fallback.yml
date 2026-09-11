@@ -1,0 +1,93 @@
+name: zed-pkg-test GitHub fallback contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/test-org-github-fallback.yml"
+      - "scripts/attest-test-org-github-fallback.mjs"
+      - "docs/test-org-github-fallback.md"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/test-org-github-fallback.yml"
+      - "scripts/attest-test-org-github-fallback.mjs"
+      - "docs/test-org-github-fallback.md"
+  schedule:
+    - cron: "11 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-org-github-fallback-${{ github.event.pull_request.number || github.ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  TEST_HARNESS_REF: f91328d59892bbfa8c3bef0866fde8646de39825
+  INFRA_REF: 754bb1f732659ed7f0bfa97f0b35844fdcd0a1d4
+
+jobs:
+  origin-down-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out zed-e2e
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Check out the immutable zed-pkg-test fixture ledger
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg-test/zed-pkg-e2e
+          ref: ${{ env.TEST_HARNESS_REF }}
+          path: fixtures/zed-pkg-e2e
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Check out the exact registry Worker implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-infra
+          ref: ${{ env.INFRA_REF }}
+          path: product/zed-infra
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v6.0.0
+        with:
+          node-version: "22"
+
+      - name: Verify immutable cross-repository inputs
+        run: |
+          set -euo pipefail
+          test "$(git -C fixtures/zed-pkg-e2e rev-parse HEAD)" = "$TEST_HARNESS_REF"
+          test "$(git -C product/zed-infra rev-parse HEAD)" = "$INFRA_REF"
+          python3 -m json.tool \
+            fixtures/zed-pkg-e2e/config/public-edge-fallback-canaries.json \
+            >/dev/null
+          node --check scripts/attest-test-org-github-fallback.mjs
+
+      - name: Prove GitHub fallback with the Rust origin unreachable
+        run: |
+          set -euo pipefail
+          node scripts/attest-test-org-github-fallback.mjs \
+            --config fixtures/zed-pkg-e2e/config/public-edge-fallback-canaries.json \
+            --infra-root product/zed-infra \
+            --evidence "$RUNNER_TEMP/test-org-github-fallback.json"
+
+      - name: Retain sanitized cross-repository evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-org-github-fallback-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/test-org-github-fallback.json
+          if-no-files-found: warn
+          retention-days: 90
+          include-hidden-files: false

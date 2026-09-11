@@ -1,0 +1,365 @@
+name: Dependency graph candidate E2E
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/dependency-graph-candidate.yml"
+      - "harness/graph-fixtures.ts"
+      - "harness/stack.ts"
+      - "suites/playwright/dependency-graph.spec.ts"
+      - "suites/playwright/dependency-graph-projection.spec.ts"
+      - "suites/playwright/dependency-graph-matrix.spec.ts"
+      - "suites/playwright/dependency-graph-private.spec.ts"
+      - "suites/playwright/dependency-graph-multi-instance.spec.ts"
+      - "suites/playwright/dependency-graph-insights.spec.ts"
+      - "playwright.graph-multi-instance.config.ts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-graph-candidate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXPECTED_E2E_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  CARGO_TERM_COLOR: always
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  # Test the actually admitted dependency graph, not an artificial single-SHA
+  # interfaces world. Each consumer/surface below keeps its own immutable
+  # producer pin; this job verifies those edges before booting the stack.
+  ZED_CLIENTS_TS_INTERFACES_REV: 3c54298fc7a8c1b2f9c1d74f588c6118b38f197e
+  ZED_CLIENTS_RUST_INTERFACES_REV: d11322f06ca6930ddcc34a745b4ef01e0b2bddc1
+  ZED_CLIENTS_RUST_LIB_CORE_REV: c8af76191f50ad7a177eb68740e69bdfaa652ff6
+  ZED_LIB_CORE_INTERFACES_REV: 0c2ffa7be791a44c8aa2a69ab4b1ea87aab4729c
+  ZED_API_INTERFACES_REV: 4b87e425b04777b0ee413971dc1df805d24f295f
+  ZED_WEB_INTERFACES_REV: 7d31f80dd8a310f218931165a3ad636a2f32b932
+  ZED_API_LIB_CORE_REV: c3d486a1519381276fbec02aa25247f542924443
+  ZED_WEB_LIB_CORE_REV: 9ca75929b0be79aaa0b8af60c2810a8ac0c34198
+  ZED_CLI_INTERFACES_REV: 3c54298fc7a8c1b2f9c1d74f588c6118b38f197e
+  ZED_CLI_LIB_CORE_REV: eac0878750332b031bc12f6040b6a795a17e7417
+  ZED_CLI_CLIENTS_REV: b32e089caea772f166204fb1c7bcaad6f56942fe
+  ORES_MIDDLEWARE_REV: c759246bbd207841aa8fe9150214ee922c751b94
+  FLAGS2ENV_REV: d7bad9ea7dfc657653368237e08903514cdca1ec
+  FIDUCIA_CLIENT_REV: d8df52a8fc4451e6b358d4085eb30ba8eb46d6d7
+  ZED_LIB_CORE_CANDIDATE: 4509f19e1d3242226f28f842f550085864582380
+  ZED_API_CANDIDATE: fa279cc9e776a4969953f5d7d0cf859c69c884a6
+  ZED_WEB_CANDIDATE: d3b9f0e44e559ec563f8228d28bf772db348d437
+  ZED_CLI_CANDIDATE: c2606c87c8b077dde39d2303bc787077ceb2c9fd
+  ZED_CLIENTS_CANDIDATE: e53dca82e6c9d946a650bf453f48df0072221e10
+
+jobs:
+  graph-candidate:
+    name: PostgreSQL + API + web + CLI + client + Chromium/Firefox/WebKit
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+
+    steps:
+      - name: Checkout E2E candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.EXPECTED_E2E_HEAD }}
+          persist-credentials: false
+          path: zed-e2e
+
+      - name: Checkout TypeScript-client-admitted zed-interfaces revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-interfaces
+          ref: ${{ env.ZED_CLIENTS_TS_INTERFACES_REV }}
+          path: zed-interfaces
+
+      - name: Checkout zed-api-server candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-api-server.rs
+          ref: ${{ env.ZED_API_CANDIDATE }}
+          path: zed-api-server.rs
+
+      - name: Checkout zed-lib-core candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-lib-core
+          ref: ${{ env.ZED_LIB_CORE_CANDIDATE }}
+          path: zed-lib-core
+
+      - name: Checkout zed-web-server candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-web-server.rs
+          ref: ${{ env.ZED_WEB_CANDIDATE }}
+          path: zed-web-server.rs
+
+      - name: Checkout zed-cli candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_CANDIDATE }}
+          path: zed-cli
+
+      - name: Checkout zed-clients candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-clients
+          ref: ${{ env.ZED_CLIENTS_CANDIDATE }}
+          path: zed-clients
+
+      - name: Verify immutable candidate provenance and dependency edges
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import subprocess
+          import tomllib
+
+          candidates = {
+              "zed-e2e": os.environ["EXPECTED_E2E_HEAD"],
+              "zed-interfaces": os.environ["ZED_CLIENTS_TS_INTERFACES_REV"],
+              "zed-lib-core": os.environ["ZED_LIB_CORE_CANDIDATE"],
+              "zed-api-server.rs": os.environ["ZED_API_CANDIDATE"],
+              "zed-web-server.rs": os.environ["ZED_WEB_CANDIDATE"],
+              "zed-cli": os.environ["ZED_CLI_CANDIDATE"],
+              "zed-clients": os.environ["ZED_CLIENTS_CANDIDATE"],
+          }
+          for repository, expected in candidates.items():
+              actual = subprocess.check_output(
+                  ["git", "-C", repository, "rev-parse", "HEAD"],
+                  text=True,
+              ).strip()
+              if actual != expected:
+                  raise SystemExit(
+                      f"{repository} checkout drifted: expected {expected}, got {actual}"
+                  )
+
+          # Build-graph identity is enforced at the native source/lock layer.
+          # These are immutable Git revisions, not package-manager requirements.
+          required_pins = {
+              "zed-lib-core/src/rust/Cargo.toml": [
+                  os.environ["ZED_LIB_CORE_INTERFACES_REV"],
+              ],
+              "zed-lib-core/Cargo.lock": [
+                  os.environ["ZED_LIB_CORE_INTERFACES_REV"],
+              ],
+              "zed-api-server.rs/Cargo.toml": [
+                  os.environ["ZED_API_INTERFACES_REV"],
+                  os.environ["ZED_API_LIB_CORE_REV"],
+                  os.environ["ORES_MIDDLEWARE_REV"],
+                  os.environ["FLAGS2ENV_REV"],
+                  os.environ["FIDUCIA_CLIENT_REV"],
+              ],
+              "zed-api-server.rs/Cargo.lock": [
+                  os.environ["ZED_API_INTERFACES_REV"],
+                  os.environ["ZED_API_LIB_CORE_REV"],
+                  os.environ["ORES_MIDDLEWARE_REV"],
+                  os.environ["FLAGS2ENV_REV"],
+                  os.environ["FIDUCIA_CLIENT_REV"],
+              ],
+              "zed-web-server.rs/Cargo.toml": [
+                  os.environ["ZED_WEB_INTERFACES_REV"],
+                  os.environ["ZED_WEB_LIB_CORE_REV"],
+              ],
+              "zed-web-server.rs/Cargo.lock": [
+                  os.environ["ZED_WEB_INTERFACES_REV"],
+                  os.environ["ZED_WEB_LIB_CORE_REV"],
+              ],
+              "zed-cli/Cargo.toml": [
+                  os.environ["ZED_CLI_INTERFACES_REV"],
+                  os.environ["ZED_CLI_LIB_CORE_REV"],
+                  os.environ["ZED_CLI_CLIENTS_REV"],
+              ],
+              "zed-cli/Cargo.lock": [
+                  os.environ["ZED_CLI_INTERFACES_REV"],
+                  os.environ["ZED_CLI_LIB_CORE_REV"],
+                  os.environ["ZED_CLI_CLIENTS_REV"],
+              ],
+              "zed-clients/.github/workflows/ci.yml": [
+                  os.environ["ZED_CLIENTS_TS_INTERFACES_REV"],
+              ],
+              "zed-clients/clients/rust/Cargo.toml": [
+                  os.environ["ZED_CLIENTS_RUST_INTERFACES_REV"],
+                  os.environ["ZED_CLIENTS_RUST_LIB_CORE_REV"],
+              ],
+              "zed-clients/clients/rust/Cargo.lock": [
+                  os.environ["ZED_CLIENTS_RUST_INTERFACES_REV"],
+                  os.environ["ZED_CLIENTS_RUST_LIB_CORE_REV"],
+              ],
+              "zed-clients/clients/wasm/Cargo.toml": [
+                  os.environ["ZED_CLIENTS_RUST_INTERFACES_REV"],
+              ],
+              "zed-clients/clients/wasm/Cargo.lock": [
+                  os.environ["ZED_CLIENTS_RUST_INTERFACES_REV"],
+              ],
+          }
+          for filename, expected_revisions in required_pins.items():
+              content = pathlib.Path(filename).read_text()
+              for expected in expected_revisions:
+                  if expected not in content:
+                      raise SystemExit(f"{filename} does not pin {expected}")
+
+          # Package-composition identity is a separate authority. The E2E
+          # package declares deployable Zed packages; leaf Cargo dependencies
+          # such as flags2env/fiducia/zed-lib are intentionally not mirrored
+          # into an API package manifest merely to satisfy this gate.
+          with pathlib.Path("zed-e2e/.zpkg.toml").open("rb") as source:
+              e2e_package_manifest = tomllib.load(source)
+          package_dependencies = e2e_package_manifest.get("dependencies")
+          if not isinstance(package_dependencies, dict):
+              raise SystemExit("zed-e2e/.zpkg.toml has no [dependencies] table")
+
+          expected_package_dependencies = {
+              "zed-pkg/zed-api-server": ("^0.1.0", "zed-api-server.rs"),
+              "zed-pkg/zed-cli": ("^0.3.0", "zed-cli"),
+              "zed-pkg/zed-interfaces": ("^0.1.0", "zed-interfaces"),
+              "zed-pkg/zed-web-server": ("^0.1.0", "zed-web-server.rs"),
+          }
+
+          def parse_version(value: str) -> tuple[int, int, int]:
+              core = value.split("+", 1)[0].split("-", 1)[0]
+              fields = core.split(".")
+              if len(fields) != 3 or any(not field.isdigit() for field in fields):
+                  raise SystemExit(f"unsupported package version {value!r}")
+              return tuple(int(field) for field in fields)
+
+          def satisfies_caret(requirement: str, version: str) -> bool:
+              if not requirement.startswith("^"):
+                  raise SystemExit(f"unsupported package requirement {requirement!r}")
+              floor = parse_version(requirement[1:])
+              actual = parse_version(version)
+              if actual < floor:
+                  return False
+              major, minor, patch = floor
+              if major > 0:
+                  return actual[0] == major
+              if minor > 0:
+                  return actual[0] == 0 and actual[1] == minor
+              return actual == (0, 0, patch)
+
+          for coordinate, (requirement, repository) in expected_package_dependencies.items():
+              actual_requirement = package_dependencies.get(coordinate)
+              if actual_requirement != requirement:
+                  raise SystemExit(
+                      f"zed-e2e/.zpkg.toml package edge drifted: "
+                      f"{coordinate}={actual_requirement!r}, expected {requirement!r}"
+                  )
+              manifest_path = pathlib.Path(repository, ".zpkg.toml")
+              with manifest_path.open("rb") as source:
+                  candidate_manifest = tomllib.load(source)
+              package = candidate_manifest.get("package")
+              if not isinstance(package, dict):
+                  raise SystemExit(f"{manifest_path} has no [package] table")
+              expected_org, expected_name = coordinate.split("/", 1)
+              if package.get("org") != expected_org or package.get("name") != expected_name:
+                  raise SystemExit(
+                      f"{manifest_path} identity drifted: "
+                      f"{package.get('org')!r}/{package.get('name')!r} != {coordinate}"
+                  )
+              version = package.get("version")
+              if not isinstance(version, str) or not satisfies_caret(requirement, version):
+                  raise SystemExit(
+                      f"{manifest_path} version {version!r} does not satisfy "
+                      f"{coordinate} {requirement}"
+                  )
+          PY
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          workspaces: |
+            zed-api-server.rs
+            zed-web-server.rs
+            zed-cli
+          shared-key: dependency-graph-candidate
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            zed-e2e/package-lock.json
+            zed-clients/clients/typescript/package-lock.json
+
+      - name: Install E2E dependencies
+        working-directory: zed-e2e
+        run: npm ci
+
+      - name: Build and test pinned TypeScript client
+        working-directory: zed-clients/clients/typescript
+        env:
+          ZED_INTERFACES_FORMAT_FIXTURE: ${{ github.workspace }}/zed-interfaces/fixtures/dependency-graph-formats-v1.json
+        run: npm ci && npm run build && npm test
+
+      - name: Install Chromium, Firefox, and WebKit
+        working-directory: zed-e2e
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Type-check graph tests and harness
+        working-directory: zed-e2e
+        run: npm run typecheck
+
+      - name: Run harness unit tests
+        working-directory: zed-e2e
+        run: npm run test:harness
+
+      - name: Boot candidate stack on allocated ports
+        working-directory: zed-e2e
+        env:
+          ZED_E2E_STORAGE_BACKEND: memory
+          ZED_E2E_ARTIFACT_SERVE_MEMORY_BUDGET_BYTES: "16777216"
+          ZED_E2E_MAX_ARTIFACT_BYTES: "8388608"
+        run: >-
+          node scripts/allocate-stack-ports.mjs
+          --github-env "$GITHUB_ENV"
+          -- npm run stack:up
+
+      - name: Run dependency graph browser, CLI, and client certification
+        working-directory: zed-e2e
+        env:
+          ZED_E2E_DEPENDENCY_GRAPH_CANDIDATE: "1"
+          ZED_E2E_EXTERNAL_STACK: "1"
+          ZED_E2E_STORAGE_BACKEND: memory
+          ZED_E2E_ARTIFACT_SERVE_MEMORY_BUDGET_BYTES: "16777216"
+          ZED_E2E_MAX_ARTIFACT_BYTES: "8388608"
+          ZED_E2E_TYPESCRIPT_CLIENT_MODULE: ${{ github.workspace }}/zed-clients/clients/typescript/dist/index.js
+        run: >-
+          npx playwright test
+          suites/playwright/dependency-graph.spec.ts
+          suites/playwright/dependency-graph-projection.spec.ts
+          suites/playwright/dependency-graph-multi-instance.spec.ts
+          suites/playwright/dependency-graph-matrix.spec.ts
+          suites/playwright/dependency-graph-private.spec.ts
+          suites/playwright/dependency-graph-insights.spec.ts
+          --config=playwright.graph-multi-instance.config.ts
+          --workers=1
+
+      - name: Print stack diagnostics
+        if: failure()
+        working-directory: zed-e2e
+        run: |
+          echo "API URL: ${ZED_E2E_API_URL:-unset}"
+          echo "Web URL: ${ZED_E2E_WEB_URL:-unset}"
+          find .e2e-state -maxdepth 1 -type f \( -name '*.log' -o -name '*.pid' \) -print -exec tail -n 250 {} \; 2>/dev/null || true
+
+      - name: Stop candidate stack
+        if: always()
+        working-directory: zed-e2e
+        env:
+          ZED_E2E_EXTERNAL_STACK: ""
+        run: npm run stack:down || true
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-graph-candidate-${{ github.run_id }}
+          path: |
+            zed-e2e/playwright-report
+            zed-e2e/test-results
+            zed-e2e/.e2e-state/*.log
+          if-no-files-found: ignore
+          retention-days: 14

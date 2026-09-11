@@ -1,0 +1,159 @@
+name: Cross-browser artifact security
+
+on:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "43 8 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zed-e2e-cross-browser-security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  ZED_INTERFACES_REV: 0c2ffa7be791a44c8aa2a69ab4b1ea87aab4729c
+  ZED_CLI_REV: 01215bfab044a35a51ca8a076fd90d5c31ed45da
+  ZED_API_REV: 579a1fc7b267f65003be990827a14c06a90d8b5d
+  ZED_WEB_REV: d3b9f0e44e559ec563f8228d28bf772db348d437
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  inert-content:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact E2E head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-e2e
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: zed-e2e
+          persist-credentials: false
+          show-progress: false
+
+      - name: Check out admitted zed-interfaces revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-interfaces
+          ref: ${{ env.ZED_INTERFACES_REV }}
+          path: zed-interfaces
+          persist-credentials: false
+          show-progress: false
+
+      - name: Check out admitted zed-cli revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_REV }}
+          path: zed-cli
+          persist-credentials: false
+          show-progress: false
+
+      - name: Check out admitted zed-api-server.rs revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-api-server.rs
+          ref: ${{ env.ZED_API_REV }}
+          path: zed-api-server.rs
+          persist-credentials: false
+          show-progress: false
+
+      - name: Check out admitted zed-web-server.rs revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zed-pkg/zed-web-server.rs
+          ref: ${{ env.ZED_WEB_REV }}
+          path: zed-web-server.rs
+          persist-credentials: false
+          show-progress: false
+
+      - name: Verify immutable source provenance
+        run: |
+          set -euo pipefail
+          test "$(git -C zed-e2e rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git -C zed-interfaces rev-parse HEAD)" = "$ZED_INTERFACES_REV"
+          test "$(git -C zed-cli rev-parse HEAD)" = "$ZED_CLI_REV"
+          test "$(git -C zed-api-server.rs rev-parse HEAD)" = "$ZED_API_REV"
+          test "$(git -C zed-web-server.rs rev-parse HEAD)" = "$ZED_WEB_REV"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: stable
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          workspaces: |
+            zed-cli
+            zed-api-server.rs
+            zed-web-server.rs
+          shared-key: cross-browser-security
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: zed-e2e/package-lock.json
+
+      - name: Install E2E dependencies and browser engines
+        working-directory: zed-e2e
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps chromium firefox webkit
+
+      - name: Typecheck and unit-test harness policy
+        working-directory: zed-e2e
+        run: |
+          set -euo pipefail
+          npm run typecheck
+          npm run test:harness
+
+      - name: Start one collision-safe bounded memory-backed registry stack
+        working-directory: zed-e2e
+        env:
+          ZED_E2E_PG_IMAGE: pgvector/pgvector:0.8.6-pg16-bookworm@sha256:84a355869251af1a3379cfc9fa7b4dbf962c03f642a4bb7b339a203925071c43
+          ZED_E2E_STORAGE_BACKEND: memory
+          ZED_E2E_STORAGE_MEMORY_MAX_BYTES: "268435456"
+        run: |
+          set -euo pipefail
+          node scripts/allocate-stack-ports.mjs --github-env "$GITHUB_ENV" -- npm run stack:up
+
+      - name: Certify inert package content in Chromium, Firefox, and WebKit
+        working-directory: zed-e2e
+        env:
+          ZED_E2E_EXTERNAL_STACK: "1"
+        run: >-
+          npx playwright test
+          suites/playwright/api-content-safety.spec.ts
+          --config=playwright.cross-browser-security.config.ts
+          --workers=1
+
+      - name: Stop the local stack
+        if: always()
+        working-directory: zed-e2e
+        env:
+          ZED_E2E_EXTERNAL_STACK: ""
+        run: npm run stack:down || true
+
+      - name: Upload cross-browser security evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cross-browser-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            zed-e2e/playwright-report
+            zed-e2e/test-results
+            zed-e2e/.stack/*.log
+            zed-e2e/.e2e-state/*.log
+          if-no-files-found: warn
+          retention-days: 14
+          include-hidden-files: true

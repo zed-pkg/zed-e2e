@@ -1,11 +1,12 @@
 import { test, expect } from "@playwright/test";
 import { API_URL, createToken } from "../../harness/stack.js";
 import { publishFixture } from "../../harness/fixtures.js";
+import { artifactCspIsConstrained } from "../../harness/csp.js";
 
 // Published package files must never be served as ACTIVE content from the
-// registry origin (stored-XSS / phishing host). The server serves html/svg/js
-// entries as text/plain and sandboxes every /v1/files response. This is the
-// browser-relevant half of the H2 hardening.
+// registry origin (stored-XSS / phishing host). Active types are downgraded to
+// text/plain, nosniff is mandatory, and the effective fleet CSP must constrain
+// active content even when middleware replaces or combines a route-local policy.
 test.describe("zed-api-server serves package content inertly", () => {
   const org = `content-${Date.now().toString(36)}`;
   const version = "1.0.0";
@@ -46,11 +47,18 @@ test.describe("zed-api-server serves package content inertly", () => {
     expect(res.headers()["content-type"]).not.toContain("javascript");
   });
 
-  test("every file response is sandboxed and non-sniffable", async ({ request }) => {
+  test("every file response is CSP-constrained and non-sniffable", async ({ request }) => {
     const res = await request.get(`${base}/www/evil.html`);
-    expect(res.headers()["content-security-policy"]).toContain("sandbox");
-    expect(res.headers()["x-content-type-options"]).toBe("nosniff");
-    expect(res.headers()["content-disposition"]).toContain("inline");
+    const headers = res.headers();
+    const csp = headers["content-security-policy"] ?? "";
+
+    // The file route may emit `sandbox`, while fleet middleware can append or
+    // replace it with a service-wide policy. Multiple CSP fields are serialized
+    // as a comma-separated policy list and every policy is enforced, so assert
+    // the effective defense-in-depth property instead of delimiter/order text.
+    expect(artifactCspIsConstrained(csp), `unexpected effective CSP: ${csp}`).toBe(true);
+    expect(headers["x-content-type-options"]).toBe("nosniff");
+    expect(headers["content-disposition"]).toContain("inline");
   });
 
   test("a real browser does not execute a served HTML entry", async ({ page }) => {

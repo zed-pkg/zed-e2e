@@ -16,7 +16,7 @@ import { ensurePolyglotSeeded, POLYGLOT_SEED } from "../../harness/fixtures.js";
  * pages with their own install snippets — not one page a consumer has to
  * reach into.
  */
-const { base, repositoryTarget, targets } = POLYGLOT_SEED;
+const { base, legacyRepositoryName, targets } = POLYGLOT_SEED;
 const languageNames = targets.map((t) => t.name ?? `${base.name}-${t.key}`);
 
 test.describe("polyglot fan-out in the registry UI", () => {
@@ -48,9 +48,9 @@ test.describe("polyglot fan-out in the registry UI", () => {
 
   test("the legacy root-target name is not published as an alias", async ({ page }) => {
     // Publishing both names would create two identities for the same source
-    // artifact and make dependency resolution ambiguous. The legacy name is
-    // accepted in the source manifest but canonicalized on the wire.
-    const response = await page.goto(`${WEB_URL}/p/${base.org}/${repositoryTarget}`);
+    // artifact and make dependency resolution ambiguous. The canonical model
+    // rejects that divergent target name, and the registry must not expose it.
+    const response = await page.goto(`${WEB_URL}/p/${base.org}/${legacyRepositoryName}`);
     expect(response?.status()).toBe(404);
   });
 
@@ -101,7 +101,7 @@ test.describe("polyglot fan-out in the registry UI", () => {
     expect(body.name).toBe(base.name);
     expect(body.versions).toContain(base.version);
 
-    const legacy = await request.get(`${API_URL}/v1/packages/${base.org}/${repositoryTarget}`);
+    const legacy = await request.get(`${API_URL}/v1/packages/${base.org}/${legacyRepositoryName}`);
     expect(legacy.status()).toBe(404);
   });
 

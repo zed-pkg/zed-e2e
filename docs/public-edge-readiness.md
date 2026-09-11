@@ -3,10 +3,10 @@
 The **public edge readiness** workflow performs safe, non-mutating checks against
 all four cloud-specific endpoints:
 
-- `https://registry.aws.zpkg.tech/healthz`
-- `https://aws.zpkg.tech/healthz`
-- `https://registry.hetzner.zpkg.tech/healthz`
-- `https://hetzner.zpkg.tech/healthz`
+- `https://registry.aws.zpkg.net/healthz`
+- `https://web.aws.zpkg.net/healthz`
+- `https://registry.hetzner.zpkg.net/healthz`
+- `https://web.hetzner.zpkg.net/healthz`
 
 Each probe records DNS resolution, TLS verification, and the HTTPS health result.
 It uploads a small text artifact and writes the same redacted evidence to the job

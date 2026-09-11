@@ -1,0 +1,69 @@
+name: Zed package and task contract
+
+on:
+  pull_request:
+    paths:
+      - '.zpkg.toml'
+      - 'zed-env.toml'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/zed-package-task-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.zpkg.toml'
+      - 'zed-env.toml'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/zed-package-task-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact reviewed head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify exact reviewed head
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Install checksum-pinned Zed v0.3.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/zed.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/zed-pkg/zed-cli/releases/download/v0.3.0/zed-x86_64-unknown-linux-musl.tar.gz \
+            -o "$archive"
+          echo "e380240c96242ab3b29e0e9d14c95ba946d086f20f0732e34d0e5cf47513efc7  $archive" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/zed-bin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/zed-bin"
+          echo "$RUNNER_TEMP/zed-bin" >> "$GITHUB_PATH"
+
+      - name: Validate package and schema-2 task contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed validate
+          grep -Fqx '"zed-pkg/zed-cli" = "^0.3.0"' .zpkg.toml
+          zed task list
+          zed task info typecheck
+          zed task info harness
+          zed task info test
+          test "$(awk '/^\[scripts\]/{in_scripts=1; next} /^\[/{in_scripts=0} in_scripts && /^[A-Za-z0-9_-]+[[:space:]]*=/{count++; key=$1} END{print count ":" key}' .zpkg.toml)" = "1:test"
+
+      - name: Execute package-level task through Zed
+        run: zed task run test
+
+      - name: Prove validation is read-only
+        shell: bash
+        run: git diff --exit-code -- .zpkg.toml zed-env.toml package.json package-lock.json

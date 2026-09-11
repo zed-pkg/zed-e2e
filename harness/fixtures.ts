@@ -95,8 +95,8 @@ export interface PolyglotTarget {
 
 /**
  * Publishes a polyglot repository: ONE `zed publish` that fans out into one
- * artifact per `[targets.*]`, plus the whole-repository artifact when
- * `repositoryTarget` is set.
+ * artifact per `[targets.*]`, plus the canonical whole-repository artifact
+ * when `includeRepository` is set.
  *
  * This is the browsable counterpart to the `zed-cli` polyglot workflow, which
  * proves the artifacts are well-formed but never puts them in a registry a
@@ -109,7 +109,7 @@ export interface PolyglotTarget {
 export async function publishPolyglotFixture(
   base: PublishedPackage,
   targets: PolyglotTarget[],
-  opts: { token: string; repositoryTarget?: string; allowExisting?: boolean },
+  opts: { token: string; includeRepository?: boolean; allowExisting?: boolean },
 ): Promise<{ base: PublishedPackage; published: string[] }> {
   const dir = mkdtempSync(path.join(os.tmpdir(), `zed-poly-${base.name}-`));
   try {
@@ -127,10 +127,11 @@ export async function publishPolyglotFixture(
     const published: string[] = [];
     // `dir = "."` is the whole-repository artifact: every language in one
     // package, published alongside the isolated slices rather than instead
-    // of them. `zed pack` exempts it from the nested-manifest guard.
-    if (opts.repositoryTarget) {
-      toml += `\n[targets.repository]\ndir = "."\nname = "${opts.repositoryTarget}"\n`;
-      published.push(`${base.org}/${opts.repositoryTarget}`);
+    // of them. Its target omits `name` because the canonical manifest model
+    // requires a whole-repository slice to publish as `package.name`.
+    if (opts.includeRepository) {
+      toml += `\n[targets.repository]\ndir = "."\n`;
+      published.push(`${base.org}/${base.name}`);
     }
     for (const t of targets) {
       const name = t.name ?? `${base.name}-${t.key}`;
@@ -187,7 +188,7 @@ export const POLYGLOT_SEED = {
     version: "1.1.2",
     description: "Official polyglot clients for the Acme API",
   } as PublishedPackage,
-  repositoryTarget: "acme-clients-repository",
+  legacyRepositoryName: "acme-clients-repository",
   targets: [
     {
       key: "nodejs",
@@ -246,7 +247,7 @@ export async function ensurePolyglotSeeded(): Promise<{ token: string; published
       POLYGLOT_SEED.targets,
       {
         token,
-        repositoryTarget: POLYGLOT_SEED.repositoryTarget,
+        includeRepository: true,
         allowExisting: true,
       },
     );

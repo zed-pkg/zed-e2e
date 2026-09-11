@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "wrapperRepository": "zed-pkg/zed-sync",
-  "wrapperRef": "agent/den-1386-opto-sync-zed-adapter",
+  "wrapperRef": "540eacde4f9fe69e128aab68cfc46daae7c6c4f5",
   "wrapperPullRequest": 4,
   "e2eRepository": "zed-pkg/zed-e2e",
   "rolloutIssue": "DEN-1386",

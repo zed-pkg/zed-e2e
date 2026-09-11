@@ -3,6 +3,8 @@ test-results/
 playwright-report/
 .stack/
 *.log
+__pycache__/
+*.py[cod]
 
 # Local secrets. Credentials enter this repo only as sops ciphertext under
 # env/enc/*.env.enc. Plaintext never gets committed.
@@ -25,3 +27,7 @@ tmp
 temp
 tmp/worktrees
 temp/worktrees
+
+# ores-sops dotenv hardening: plaintext dotenv is local-only at every depth;
+# only env/enc/*.env.enc (sops ciphertext) is tracked. See env/README.md.
+**/**/*.env

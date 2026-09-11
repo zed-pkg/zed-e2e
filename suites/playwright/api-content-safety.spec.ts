@@ -1,11 +1,12 @@
 import { test, expect } from "@playwright/test";
 import { API_URL, createToken } from "../../harness/stack.js";
 import { publishFixture } from "../../harness/fixtures.js";
+import { artifactCspIsConstrained } from "../../harness/csp.js";
 
 // Published package files must never be served as ACTIVE content from the
 // registry origin (stored-XSS / phishing host). Active types are downgraded to
 // text/plain, nosniff is mandatory, and the effective fleet CSP must constrain
-// active content even when middleware replaces a route-local policy.
+// active content even when middleware replaces or combines a route-local policy.
 test.describe("zed-api-server serves package content inertly", () => {
   const org = `content-${Date.now().toString(36)}`;
   const version = "1.0.0";
@@ -51,13 +52,11 @@ test.describe("zed-api-server serves package content inertly", () => {
     const headers = res.headers();
     const csp = headers["content-security-policy"] ?? "";
 
-    // The file route may emit `sandbox`, while the fleet middleware can replace
-    // it with the service-wide policy. Assert the effective security property
-    // on the wire rather than coupling this E2E test to middleware ordering.
-    const sandboxed = /(?:^|;)\s*sandbox(?:\s|;|$)/i.test(csp);
-    const fleetConstrained = /(?:^|;)\s*default-src\s+/i.test(csp)
-      && /(?:^|;)\s*frame-ancestors\s+'none'(?:\s|;|$)/i.test(csp);
-    expect(sandboxed || fleetConstrained, `unexpected effective CSP: ${csp}`).toBe(true);
+    // The file route may emit `sandbox`, while fleet middleware can append or
+    // replace it with a service-wide policy. Multiple CSP fields are serialized
+    // as a comma-separated policy list and every policy is enforced, so assert
+    // the effective defense-in-depth property instead of delimiter/order text.
+    expect(artifactCspIsConstrained(csp), `unexpected effective CSP: ${csp}`).toBe(true);
     expect(headers["x-content-type-options"]).toBe("nosniff");
     expect(headers["content-disposition"]).toContain("inline");
   });

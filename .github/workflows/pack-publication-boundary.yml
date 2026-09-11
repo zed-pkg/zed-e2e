@@ -22,6 +22,9 @@ on:
 permissions:
   contents: read
 
+env:
+  EXPECTED_E2E_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+
 concurrency:
   group: pack-publication-boundary-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -32,9 +35,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Check out zed-e2e
+      - name: Check out exact zed-e2e contributor head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ env.EXPECTED_E2E_HEAD }}
           persist-credentials: false
           path: zed-e2e
 
@@ -46,10 +50,28 @@ jobs:
           ref: main
           path: zed-cli
 
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
-        with:
-          toolchain: stable
+      - name: Install exact CLI-declared Rust toolchain
+        run: |
+          set -euo pipefail
+          toolchain="$(python3 - <<'PY'
+          import pathlib
+          import re
+          import tomllib
+
+          with pathlib.Path('zed-cli/rust-toolchain.toml').open('rb') as source:
+              channel = tomllib.load(source).get('toolchain', {}).get('channel')
+          if not isinstance(channel, str) or re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', channel) is None:
+              raise SystemExit(f'zed-cli must declare an exact numeric Rust toolchain, got {channel!r}')
+          print(channel)
+          PY
+          )"
+          rustup toolchain install "$toolchain" --profile minimal --no-self-update
+          actual="$(cd zed-cli && rustc --version | awk '{print $2}')"
+          test "$actual" = "$toolchain" || {
+            printf 'zed-cli rustc mismatch: expected %s, got %s\n' "$toolchain" "$actual" >&2
+            exit 1
+          }
+          printf 'zed_cli_rust_toolchain=%s\n' "$toolchain"
 
       - name: Cache Rust build outputs
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32

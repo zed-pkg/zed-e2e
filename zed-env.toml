@@ -1,0 +1,13 @@
+schema = 2
+
+[tasks.typecheck]
+description = "Typecheck the Zed E2E harness"
+run = ["npm ci", "npm run typecheck"]
+
+[tasks.harness]
+description = "Run the bounded harness tests"
+run = ["npm ci", "npm run test:harness"]
+
+[tasks.test]
+description = "Run the package-level release test contract"
+run = ["npm ci", "npm run typecheck", "npm run test:harness"]

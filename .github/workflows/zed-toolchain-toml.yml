@@ -1,0 +1,183 @@
+name: Zed toolchain TOML contracts
+
+on:
+  pull_request:
+    paths:
+      - '.zpkg.toml'
+      - '**/*.toml'
+      - '**/*.toml.example'
+      - 'contracts/zed-toolchain/**'
+      - '.github/workflows/tagged-e2e.yml'
+      - '.github/workflows/zed-toolchain-toml.yml'
+      - 'scripts/check-zed-toolchain-toml.py'
+      - 'scripts/check-zed-package-tasks.py'
+      - 'scripts/render-zed-toolchain-contract.py'
+  push:
+    branches: [main]
+    paths:
+      - '.zpkg.toml'
+      - '**/*.toml'
+      - '**/*.toml.example'
+      - 'contracts/zed-toolchain/**'
+      - '.github/workflows/tagged-e2e.yml'
+      - '.github/workflows/zed-toolchain-toml.yml'
+      - 'scripts/check-zed-toolchain-toml.py'
+      - 'scripts/check-zed-package-tasks.py'
+      - 'scripts/render-zed-toolchain-contract.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zed-toolchain-toml-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact zed-e2e candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          path: zed-e2e
+
+      - name: Verify exact reviewed zed-e2e head
+        working-directory: zed-e2e
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Check out immutable default zed-cli
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: zed-pkg/zed-cli
+          ref: 89b073aee73e5cb6d35aa211adcfa1d82dfb4d29
+          persist-credentials: false
+          path: zed-cli
+
+      - name: Check out immutable default flags-2-env
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: flags-2-env/flags-2-env
+          ref: 2946224fb3a1bd84c0e39146b24f5f1ca8d69862
+          persist-credentials: false
+          path: flags-2-env
+
+      - name: Install Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Install Rust toolchain declared by audited zed-cli
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain="$(python3 - <<'PY'
+          import tomllib
+          with open("zed-cli/rust-toolchain.toml", "rb") as source:
+              print(tomllib.load(source)["toolchain"]["channel"])
+          PY
+          )"
+          mapfile -t components < <(python3 - <<'PY'
+          import tomllib
+          with open("zed-cli/rust-toolchain.toml", "rb") as source:
+              values = tomllib.load(source)["toolchain"].get("components", [])
+          for value in values:
+              print(value)
+          PY
+          )
+          install_args=(toolchain install "$toolchain" --profile minimal --no-self-update)
+          for component in "${components[@]}"; do
+            install_args+=(--component "$component")
+          done
+          rustup "${install_args[@]}"
+          rustup default "$toolchain"
+          printf 'RUSTUP_TOOLCHAIN=%s\n' "$toolchain" >> "$GITHUB_ENV"
+          rustup run "$toolchain" rustc --version
+
+      - name: Parse tracked TOML and verify package/toolchain contracts
+        run: |
+          set -euo pipefail
+          python3 zed-e2e/scripts/check-zed-package-tasks.py
+          python3 zed-e2e/scripts/check-zed-toolchain-toml.py \
+            --zed-cli-root zed-cli \
+            --flags-root flags-2-env \
+            --workflow zed-e2e/.github/workflows/tagged-e2e.yml \
+            --require-default-checkouts
+          cargo metadata \
+            --manifest-path zed-cli/Cargo.toml \
+            --locked \
+            --no-deps \
+            --format-version 1 \
+            > "$RUNNER_TEMP/zed-cli-cargo-metadata.json"
+          test -s "$RUNNER_TEMP/zed-cli-cargo-metadata.json"
+
+      - name: Render exact TOML tuple as TJSV instance evidence
+        run: |
+          set -euo pipefail
+          instance_dir="$RUNNER_TEMP/zed-toolchain-instances/ZedToolchainContract/valid"
+          mkdir -p "$instance_dir"
+          python3 zed-e2e/scripts/render-zed-toolchain-contract.py \
+            --zed-cli-root zed-cli \
+            --e2e-root zed-e2e \
+            --output "$instance_dir/current.json"
+          test -s "$instance_dir/current.json"
+
+      - name: Admit independent TypeSpec and Draft 2020-12 authorities with TJSV
+        uses: ORESoftware/typespec-json-schema-validator@8bf7ebda4e35c0d11b5b5e5f865867bee4fc3085
+        with:
+          typespec: zed-e2e/contracts/zed-toolchain/main.tsp
+          schema: zed-e2e/contracts/zed-toolchain/authored.schema.json
+          instances: ${{ runner.temp }}/zed-toolchain-instances
+          report: ${{ runner.temp }}/zed-toolchain-tjsv-report.json
+          sarif: ''
+          output_dir: ${{ runner.temp }}/zed-toolchain-tjsv-generated
+          quiet: 'true'
+
+      - name: Verify deterministic TJSV receipt
+        shell: python
+        env:
+          REPORT_PATH: ${{ runner.temp }}/zed-toolchain-tjsv-report.json
+        run: |
+          import json
+          import os
+          from pathlib import Path
+
+          report = json.loads(Path(os.environ["REPORT_PATH"]).read_text(encoding="utf-8"))
+          assert report.get("schema") == "ores.typespec-json-schema-validator.report/v1", report.get("schema")
+          assert report.get("status") == "passed", report.get("status")
+          differential = report.get("differential", {})
+          assert differential.get("disabled") is not True, differential
+          print(f"TJSV receipt admitted: runId={report.get('runId')} status={report.get('status')}")
+
+      - name: Build the exact native flags parser
+        working-directory: flags-2-env
+        run: make all
+
+      - name: Audit every root CLI flag contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' specs < <(
+            find zed-cli -maxdepth 1 -type f \
+              \( -name '.cli-flags.toml' -o -name '.*-cli-flags.toml' \) \
+              -print0 | sort -z
+          )
+          test "${#specs[@]}" -ge 6
+          for spec in "${specs[@]}"; do
+            echo "auditing $spec"
+            flags-2-env/build/flags2env audit "$spec"
+          done
+
+      - name: Prove validation did not mutate tracked source
+        run: |
+          set -euo pipefail
+          git -C zed-e2e diff --exit-code HEAD
+          git -C zed-cli diff --exit-code HEAD
+          # `make all` deliberately rebuilds tracked compatibility artifacts under build/.
+          # The validation invariant is that no source/config outside that build output changes.
+          git -C flags-2-env diff --exit-code HEAD -- . ':(exclude)build/**'

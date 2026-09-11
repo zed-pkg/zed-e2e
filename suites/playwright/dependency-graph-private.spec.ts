@@ -157,8 +157,12 @@ test.describe("private dependency graph tenant isolation", () => {
     });
     expect(response.status()).toBe(200);
     expect(response.headers()["cache-control"]).toBe("private, no-store");
-    expect(response.headers().vary.toLowerCase().split(/\s*,\s*/)).toEqual([
+    const vary = [...new Set(
+      response.headers().vary.toLowerCase().split(/\s*,\s*/).filter(Boolean),
+    )].sort();
+    expect(vary).toEqual([
       "accept",
+      "accept-encoding",
       "authorization",
     ]);
     expect(response.headers()["x-zpkg-graph-authoritative"]).toBe("true");

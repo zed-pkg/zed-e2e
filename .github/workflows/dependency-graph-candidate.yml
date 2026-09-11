@@ -26,9 +26,11 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
   # Test the actually admitted dependency graph, not an artificial single-SHA
-  # interfaces world. Each consumer below keeps its own immutable producer pin;
-  # this job verifies those edges before booting the composed product stack.
-  ZED_CLIENTS_INTERFACES_REV: 3c54298fc7a8c1b2f9c1d74f588c6118b38f197e
+  # interfaces world. Each consumer/surface below keeps its own immutable
+  # producer pin; this job verifies those edges before booting the stack.
+  ZED_CLIENTS_TS_INTERFACES_REV: 3c54298fc7a8c1b2f9c1d74f588c6118b38f197e
+  ZED_CLIENTS_RUST_INTERFACES_REV: d11322f06ca6930ddcc34a745b4ef01e0b2bddc1
+  ZED_CLIENTS_RUST_LIB_CORE_REV: c8af76191f50ad7a177eb68740e69bdfaa652ff6
   ZED_LIB_CORE_INTERFACES_REV: 7d31f80dd8a310f218931165a3ad636a2f32b932
   ZED_API_INTERFACES_REV: 4b87e425b04777b0ee413971dc1df805d24f295f
   ZED_WEB_INTERFACES_REV: 7d31f80dd8a310f218931165a3ad636a2f32b932
@@ -56,11 +58,11 @@ jobs:
         with:
           path: zed-e2e
 
-      - name: Checkout client-admitted zed-interfaces revision
+      - name: Checkout TypeScript-client-admitted zed-interfaces revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-interfaces
-          ref: ${{ env.ZED_CLIENTS_INTERFACES_REV }}
+          ref: ${{ env.ZED_CLIENTS_TS_INTERFACES_REV }}
           path: zed-interfaces
 
       - name: Checkout zed-api-server candidate
@@ -107,7 +109,7 @@ jobs:
           import subprocess
 
           candidates = {
-              "zed-interfaces": os.environ["ZED_CLIENTS_INTERFACES_REV"],
+              "zed-interfaces": os.environ["ZED_CLIENTS_TS_INTERFACES_REV"],
               "zed-lib-core": os.environ["ZED_LIB_CORE_CANDIDATE"],
               "zed-api-server.rs": os.environ["ZED_API_CANDIDATE"],
               "zed-web-server.rs": os.environ["ZED_WEB_CANDIDATE"],
@@ -157,7 +159,21 @@ jobs:
                   os.environ["ZED_CLI_CLIENTS_REV"],
               ],
               "zed-clients/.github/workflows/ci.yml": [
-                  os.environ["ZED_CLIENTS_INTERFACES_REV"],
+                  os.environ["ZED_CLIENTS_TS_INTERFACES_REV"],
+              ],
+              "zed-clients/clients/rust/Cargo.toml": [
+                  os.environ["ZED_CLIENTS_RUST_INTERFACES_REV"],
+                  os.environ["ZED_CLIENTS_RUST_LIB_CORE_REV"],
+              ],
+              "zed-clients/clients/rust/Cargo.lock": [
+                  os.environ["ZED_CLIENTS_RUST_INTERFACES_REV"],
+                  os.environ["ZED_CLIENTS_RUST_LIB_CORE_REV"],
+              ],
+              "zed-clients/clients/wasm/Cargo.toml": [
+                  os.environ["ZED_CLIENTS_RUST_INTERFACES_REV"],
+              ],
+              "zed-clients/clients/wasm/Cargo.lock": [
+                  os.environ["ZED_CLIENTS_RUST_INTERFACES_REV"],
               ],
           }
           for filename, expected_revisions in required_pins.items():

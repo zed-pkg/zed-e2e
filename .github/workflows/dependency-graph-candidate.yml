@@ -23,6 +23,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  EXPECTED_E2E_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
   CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
   # Test the actually admitted dependency graph, not an artificial single-SHA
@@ -56,6 +57,8 @@ jobs:
       - name: Checkout E2E candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ env.EXPECTED_E2E_HEAD }}
+          persist-credentials: false
           path: zed-e2e
 
       - name: Checkout TypeScript-client-admitted zed-interfaces revision
@@ -109,6 +112,7 @@ jobs:
           import subprocess
 
           candidates = {
+              "zed-e2e": os.environ["EXPECTED_E2E_HEAD"],
               "zed-interfaces": os.environ["ZED_CLIENTS_TS_INTERFACES_REV"],
               "zed-lib-core": os.environ["ZED_LIB_CORE_CANDIDATE"],
               "zed-api-server.rs": os.environ["ZED_API_CANDIDATE"],

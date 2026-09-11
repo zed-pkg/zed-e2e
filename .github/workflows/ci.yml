@@ -1,7 +1,8 @@
 name: ci
 
 # Sibling default branches are intentional nightly compatibility inputs. Pull
-# requests validate the exact GitHub-generated integration commit.
+# requests validate the exact contributor head rather than GitHub's synthetic
+# merge commit so the certified source is the source that can actually merge.
 on:
   push:
     branches: [main]
@@ -17,6 +18,7 @@ permissions:
 # input—not a permanent SHA pin—so the nightly suite remains a compatibility
 # canary for API/CLI/web/interface drift.
 env:
+  EXPECTED_E2E_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
   ZED_E2E_API_REF: main
   ZED_E2E_CLI_REF: main
 
@@ -33,11 +35,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - name: Check out the exact PR integration commit
+      - name: Check out the exact E2E contributor head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-e2e
-          ref: ${{ github.sha }}
+          ref: ${{ env.EXPECTED_E2E_HEAD }}
           path: zed-e2e
           persist-credentials: false
           show-progress: false
@@ -85,10 +87,47 @@ jobs:
           grep -q 'R2gRegistryMode::Server' zed-cli/src/r2g.rs
           printf 'api_revision=%s\ncli_revision=%s\n' "$api_revision" "$cli_revision"
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
-        with:
-          toolchain: stable
+      - name: Install exact producer-declared Rust toolchains
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > "$RUNNER_TEMP/zed-rust-toolchains"
+          import pathlib
+          import re
+          import tomllib
+
+          repos = ('zed-cli', 'zed-api-server.rs', 'zed-web-server.rs')
+          channels = []
+          for repo in repos:
+              path = pathlib.Path(repo, 'rust-toolchain.toml')
+              if not path.is_file():
+                  raise SystemExit(f'{repo} must commit rust-toolchain.toml')
+              with path.open('rb') as source:
+                  channel = tomllib.load(source).get('toolchain', {}).get('channel')
+              if not isinstance(channel, str) or re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', channel) is None:
+                  raise SystemExit(f'{repo} must declare an exact numeric Rust toolchain, got {channel!r}')
+              print(f'{repo}\t{channel}', file=__import__('sys').stderr)
+              channels.append(channel)
+          for channel in sorted(set(channels)):
+              print(channel)
+          PY
+          while IFS= read -r toolchain; do
+            rustup toolchain install "$toolchain" --profile minimal --no-self-update
+          done < "$RUNNER_TEMP/zed-rust-toolchains"
+          for repo in zed-cli zed-api-server.rs zed-web-server.rs; do
+            expected="$(python3 - "$repo/rust-toolchain.toml" <<'PY'
+          import pathlib
+          import sys
+          import tomllib
+          with pathlib.Path(sys.argv[1]).open('rb') as source:
+              print(tomllib.load(source)['toolchain']['channel'])
+          PY
+            )"
+            actual="$(cd "$repo" && rustc --version | awk '{print $2}')"
+            test "$actual" = "$expected" || {
+              printf '%s rustc mismatch: expected %s, got %s\n' "$repo" "$expected" "$actual" >&2
+              exit 1
+            }
+          done
 
       - name: Restore Rust build cache
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1

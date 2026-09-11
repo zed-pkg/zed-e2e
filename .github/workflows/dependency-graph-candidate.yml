@@ -23,19 +23,31 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  EXPECTED_E2E_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
   CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-  # Immutable product composition. The web pin is the exact main-branch merge
-  # that preserves restored filter state and pointer-safe wrapped popovers.
-  # Other inputs retain the established contract/artifact pins.
-  ZED_INTERFACES_CANDIDATE: 4b87e425b04777b0ee413971dc1df805d24f295f
-  ZED_GRAPH_INTERFACES_CANDIDATE: 7d31f80dd8a310f218931165a3ad636a2f32b932
-  ZED_LIB_CORE_CANDIDATE: c3d486a1519381276fbec02aa25247f542924443
-  ZED_WEB_CORE_CANDIDATE: 9ca75929b0be79aaa0b8af60c2810a8ac0c34198
-  ZED_API_CANDIDATE: 7e280f7d6a23432b5414ffeb591ca77737b1ce37
-  ZED_WEB_CANDIDATE: ad0207f376a3de341b3f282e616b29e24825baec
-  ZED_CLI_CANDIDATE: 3265041478d6873ce3815b11930bd1e8e8004837
-  ZED_CLIENTS_CANDIDATE: 799c967f44fdd7932d18432257a2bd46eff4e33a
+  # Test the actually admitted dependency graph, not an artificial single-SHA
+  # interfaces world. Each consumer/surface below keeps its own immutable
+  # producer pin; this job verifies those edges before booting the stack.
+  ZED_CLIENTS_TS_INTERFACES_REV: 3c54298fc7a8c1b2f9c1d74f588c6118b38f197e
+  ZED_CLIENTS_RUST_INTERFACES_REV: d11322f06ca6930ddcc34a745b4ef01e0b2bddc1
+  ZED_CLIENTS_RUST_LIB_CORE_REV: c8af76191f50ad7a177eb68740e69bdfaa652ff6
+  ZED_LIB_CORE_INTERFACES_REV: 0c2ffa7be791a44c8aa2a69ab4b1ea87aab4729c
+  ZED_API_INTERFACES_REV: 4b87e425b04777b0ee413971dc1df805d24f295f
+  ZED_WEB_INTERFACES_REV: 7d31f80dd8a310f218931165a3ad636a2f32b932
+  ZED_API_LIB_CORE_REV: c3d486a1519381276fbec02aa25247f542924443
+  ZED_WEB_LIB_CORE_REV: 9ca75929b0be79aaa0b8af60c2810a8ac0c34198
+  ZED_CLI_INTERFACES_REV: 3c54298fc7a8c1b2f9c1d74f588c6118b38f197e
+  ZED_CLI_LIB_CORE_REV: eac0878750332b031bc12f6040b6a795a17e7417
+  ZED_CLI_CLIENTS_REV: b32e089caea772f166204fb1c7bcaad6f56942fe
+  ORES_MIDDLEWARE_REV: c759246bbd207841aa8fe9150214ee922c751b94
+  FLAGS2ENV_REV: d7bad9ea7dfc657653368237e08903514cdca1ec
+  FIDUCIA_CLIENT_REV: d8df52a8fc4451e6b358d4085eb30ba8eb46d6d7
+  ZED_LIB_CORE_CANDIDATE: 4509f19e1d3242226f28f842f550085864582380
+  ZED_API_CANDIDATE: fa279cc9e776a4969953f5d7d0cf859c69c884a6
+  ZED_WEB_CANDIDATE: d3b9f0e44e559ec563f8228d28bf772db348d437
+  ZED_CLI_CANDIDATE: c2606c87c8b077dde39d2303bc787077ceb2c9fd
+  ZED_CLIENTS_CANDIDATE: e53dca82e6c9d946a650bf453f48df0072221e10
 
 jobs:
   graph-candidate:
@@ -47,13 +59,15 @@ jobs:
       - name: Checkout E2E candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ env.EXPECTED_E2E_HEAD }}
+          persist-credentials: false
           path: zed-e2e
 
-      - name: Checkout zed-interfaces candidate
+      - name: Checkout TypeScript-client-admitted zed-interfaces revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: zed-pkg/zed-interfaces
-          ref: ${{ env.ZED_INTERFACES_CANDIDATE }}
+          ref: ${{ env.ZED_CLIENTS_TS_INTERFACES_REV }}
           path: zed-interfaces
 
       - name: Checkout zed-api-server candidate
@@ -91,16 +105,18 @@ jobs:
           ref: ${{ env.ZED_CLIENTS_CANDIDATE }}
           path: zed-clients
 
-      - name: Verify immutable candidate provenance
+      - name: Verify immutable candidate provenance and dependency edges
         shell: bash
         run: |
           python3 - <<'PY'
           import os
           import pathlib
           import subprocess
+          import tomllib
 
           candidates = {
-              "zed-interfaces": os.environ["ZED_INTERFACES_CANDIDATE"],
+              "zed-e2e": os.environ["EXPECTED_E2E_HEAD"],
+              "zed-interfaces": os.environ["ZED_CLIENTS_TS_INTERFACES_REV"],
               "zed-lib-core": os.environ["ZED_LIB_CORE_CANDIDATE"],
               "zed-api-server.rs": os.environ["ZED_API_CANDIDATE"],
               "zed-web-server.rs": os.environ["ZED_WEB_CANDIDATE"],
@@ -117,25 +133,134 @@ jobs:
                       f"{repository} checkout drifted: expected {expected}, got {actual}"
                   )
 
-          graph_interfaces = os.environ["ZED_GRAPH_INTERFACES_CANDIDATE"]
-          api_interfaces = os.environ["ZED_INTERFACES_CANDIDATE"]
-          core = os.environ["ZED_LIB_CORE_CANDIDATE"]
-          web_core = os.environ["ZED_WEB_CORE_CANDIDATE"]
+          # Build-graph identity is enforced at the native source/lock layer.
+          # These are immutable Git revisions, not package-manager requirements.
           required_pins = {
-              "zed-lib-core/src/rust-orm/Cargo.toml": [graph_interfaces],
-              "zed-api-server.rs/Cargo.toml": [api_interfaces, core],
-              "zed-api-server.rs/Cargo.lock": [api_interfaces, core],
-              "zed-web-server.rs/Cargo.toml": [graph_interfaces, web_core],
-              "zed-web-server.rs/Cargo.lock": [graph_interfaces, web_core],
-              "zed-cli/Cargo.toml": [graph_interfaces],
-              "zed-cli/Cargo.lock": [graph_interfaces],
-              "zed-clients/.github/workflows/ci.yml": [graph_interfaces],
+              "zed-lib-core/src/rust/Cargo.toml": [
+                  os.environ["ZED_LIB_CORE_INTERFACES_REV"],
+              ],
+              "zed-lib-core/Cargo.lock": [
+                  os.environ["ZED_LIB_CORE_INTERFACES_REV"],
+              ],
+              "zed-api-server.rs/Cargo.toml": [
+                  os.environ["ZED_API_INTERFACES_REV"],
+                  os.environ["ZED_API_LIB_CORE_REV"],
+                  os.environ["ORES_MIDDLEWARE_REV"],
+                  os.environ["FLAGS2ENV_REV"],
+                  os.environ["FIDUCIA_CLIENT_REV"],
+              ],
+              "zed-api-server.rs/Cargo.lock": [
+                  os.environ["ZED_API_INTERFACES_REV"],
+                  os.environ["ZED_API_LIB_CORE_REV"],
+                  os.environ["ORES_MIDDLEWARE_REV"],
+                  os.environ["FLAGS2ENV_REV"],
+                  os.environ["FIDUCIA_CLIENT_REV"],
+              ],
+              "zed-web-server.rs/Cargo.toml": [
+                  os.environ["ZED_WEB_INTERFACES_REV"],
+                  os.environ["ZED_WEB_LIB_CORE_REV"],
+              ],
+              "zed-web-server.rs/Cargo.lock": [
+                  os.environ["ZED_WEB_INTERFACES_REV"],
+                  os.environ["ZED_WEB_LIB_CORE_REV"],
+              ],
+              "zed-cli/Cargo.toml": [
+                  os.environ["ZED_CLI_INTERFACES_REV"],
+                  os.environ["ZED_CLI_LIB_CORE_REV"],
+                  os.environ["ZED_CLI_CLIENTS_REV"],
+              ],
+              "zed-cli/Cargo.lock": [
+                  os.environ["ZED_CLI_INTERFACES_REV"],
+                  os.environ["ZED_CLI_LIB_CORE_REV"],
+                  os.environ["ZED_CLI_CLIENTS_REV"],
+              ],
+              "zed-clients/.github/workflows/ci.yml": [
+                  os.environ["ZED_CLIENTS_TS_INTERFACES_REV"],
+              ],
+              "zed-clients/clients/rust/Cargo.toml": [
+                  os.environ["ZED_CLIENTS_RUST_INTERFACES_REV"],
+                  os.environ["ZED_CLIENTS_RUST_LIB_CORE_REV"],
+              ],
+              "zed-clients/clients/rust/Cargo.lock": [
+                  os.environ["ZED_CLIENTS_RUST_INTERFACES_REV"],
+                  os.environ["ZED_CLIENTS_RUST_LIB_CORE_REV"],
+              ],
+              "zed-clients/clients/wasm/Cargo.toml": [
+                  os.environ["ZED_CLIENTS_RUST_INTERFACES_REV"],
+              ],
+              "zed-clients/clients/wasm/Cargo.lock": [
+                  os.environ["ZED_CLIENTS_RUST_INTERFACES_REV"],
+              ],
           }
           for filename, expected_revisions in required_pins.items():
               content = pathlib.Path(filename).read_text()
               for expected in expected_revisions:
                   if expected not in content:
                       raise SystemExit(f"{filename} does not pin {expected}")
+
+          # Package-composition identity is a separate authority. The E2E
+          # package declares deployable Zed packages; leaf Cargo dependencies
+          # such as flags2env/fiducia/zed-lib are intentionally not mirrored
+          # into an API package manifest merely to satisfy this gate.
+          with pathlib.Path("zed-e2e/.zpkg.toml").open("rb") as source:
+              e2e_package_manifest = tomllib.load(source)
+          package_dependencies = e2e_package_manifest.get("dependencies")
+          if not isinstance(package_dependencies, dict):
+              raise SystemExit("zed-e2e/.zpkg.toml has no [dependencies] table")
+
+          expected_package_dependencies = {
+              "zed-pkg/zed-api-server": ("^0.1.0", "zed-api-server.rs"),
+              "zed-pkg/zed-cli": ("^0.3.0", "zed-cli"),
+              "zed-pkg/zed-interfaces": ("^0.1.0", "zed-interfaces"),
+              "zed-pkg/zed-web-server": ("^0.1.0", "zed-web-server.rs"),
+          }
+
+          def parse_version(value: str) -> tuple[int, int, int]:
+              core = value.split("+", 1)[0].split("-", 1)[0]
+              fields = core.split(".")
+              if len(fields) != 3 or any(not field.isdigit() for field in fields):
+                  raise SystemExit(f"unsupported package version {value!r}")
+              return tuple(int(field) for field in fields)
+
+          def satisfies_caret(requirement: str, version: str) -> bool:
+              if not requirement.startswith("^"):
+                  raise SystemExit(f"unsupported package requirement {requirement!r}")
+              floor = parse_version(requirement[1:])
+              actual = parse_version(version)
+              if actual < floor:
+                  return False
+              major, minor, patch = floor
+              if major > 0:
+                  return actual[0] == major
+              if minor > 0:
+                  return actual[0] == 0 and actual[1] == minor
+              return actual == (0, 0, patch)
+
+          for coordinate, (requirement, repository) in expected_package_dependencies.items():
+              actual_requirement = package_dependencies.get(coordinate)
+              if actual_requirement != requirement:
+                  raise SystemExit(
+                      f"zed-e2e/.zpkg.toml package edge drifted: "
+                      f"{coordinate}={actual_requirement!r}, expected {requirement!r}"
+                  )
+              manifest_path = pathlib.Path(repository, ".zpkg.toml")
+              with manifest_path.open("rb") as source:
+                  candidate_manifest = tomllib.load(source)
+              package = candidate_manifest.get("package")
+              if not isinstance(package, dict):
+                  raise SystemExit(f"{manifest_path} has no [package] table")
+              expected_org, expected_name = coordinate.split("/", 1)
+              if package.get("org") != expected_org or package.get("name") != expected_name:
+                  raise SystemExit(
+                      f"{manifest_path} identity drifted: "
+                      f"{package.get('org')!r}/{package.get('name')!r} != {coordinate}"
+                  )
+              version = package.get("version")
+              if not isinstance(version, str) or not satisfies_caret(requirement, version):
+                  raise SystemExit(
+                      f"{manifest_path} version {version!r} does not satisfy "
+                      f"{coordinate} {requirement}"
+                  )
           PY
 
       - name: Install Rust toolchain

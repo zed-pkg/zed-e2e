@@ -110,6 +110,7 @@ jobs:
           import os
           import pathlib
           import subprocess
+          import tomllib
 
           candidates = {
               "zed-e2e": os.environ["EXPECTED_E2E_HEAD"],
@@ -130,6 +131,8 @@ jobs:
                       f"{repository} checkout drifted: expected {expected}, got {actual}"
                   )
 
+          # Build-graph identity is enforced at the native source/lock layer.
+          # These are immutable Git revisions, not package-manager requirements.
           required_pins = {
               "zed-lib-core/src/rust-orm/Cargo.toml": [
                   os.environ["ZED_LIB_CORE_INTERFACES_REV"],
@@ -143,12 +146,6 @@ jobs:
                   os.environ["ZED_API_INTERFACES_REV"],
                   os.environ["ZED_API_LIB_CORE_REV"],
                   os.environ["ORES_MIDDLEWARE_REV"],
-              ],
-              "zed-api-server.rs/.zpkg.toml": [
-                  '"flags-2-env/flags-2-env" = "=0.3.0"',
-                  '"fiducia-cloud/fiducia-clients" = "^0.1.0"',
-                  '"zed-pkg/zed-interfaces" = "^0.1.0"',
-                  '"zed-pkg/zed-lib-core" = "^0.1.0"',
               ],
               "zed-web-server.rs/Cargo.toml": [
                   os.environ["ZED_WEB_INTERFACES_REV"],
@@ -191,6 +188,70 @@ jobs:
               for expected in expected_revisions:
                   if expected not in content:
                       raise SystemExit(f"{filename} does not pin {expected}")
+
+          # Package-composition identity is a separate authority.  The E2E
+          # package declares deployable Zed packages; leaf Cargo dependencies
+          # such as flags2env/fiducia/zed-lib are intentionally not mirrored
+          # into an API package manifest merely to satisfy this gate.
+          with pathlib.Path("zed-e2e/.zpkg.toml").open("rb") as source:
+              e2e_package_manifest = tomllib.load(source)
+          package_dependencies = e2e_package_manifest.get("dependencies")
+          if not isinstance(package_dependencies, dict):
+              raise SystemExit("zed-e2e/.zpkg.toml has no [dependencies] table")
+
+          expected_package_dependencies = {
+              "zed-pkg/zed-api-server": ("^0.1.0", "zed-api-server.rs"),
+              "zed-pkg/zed-cli": ("^0.3.0", "zed-cli"),
+              "zed-pkg/zed-interfaces": ("^0.1.0", "zed-interfaces"),
+              "zed-pkg/zed-web-server": ("^0.1.0", "zed-web-server.rs"),
+          }
+
+          def parse_version(value: str) -> tuple[int, int, int]:
+              core = value.split("+", 1)[0].split("-", 1)[0]
+              fields = core.split(".")
+              if len(fields) != 3 or any(not field.isdigit() for field in fields):
+                  raise SystemExit(f"unsupported package version {value!r}")
+              return tuple(int(field) for field in fields)
+
+          def satisfies_caret(requirement: str, version: str) -> bool:
+              if not requirement.startswith("^"):
+                  raise SystemExit(f"unsupported package requirement {requirement!r}")
+              floor = parse_version(requirement[1:])
+              actual = parse_version(version)
+              if actual < floor:
+                  return False
+              major, minor, patch = floor
+              if major > 0:
+                  return actual[0] == major
+              if minor > 0:
+                  return actual[0] == 0 and actual[1] == minor
+              return actual == (0, 0, patch)
+
+          for coordinate, (requirement, repository) in expected_package_dependencies.items():
+              actual_requirement = package_dependencies.get(coordinate)
+              if actual_requirement != requirement:
+                  raise SystemExit(
+                      f"zed-e2e/.zpkg.toml package edge drifted: "
+                      f"{coordinate}={actual_requirement!r}, expected {requirement!r}"
+                  )
+              manifest_path = pathlib.Path(repository, ".zpkg.toml")
+              with manifest_path.open("rb") as source:
+                  candidate_manifest = tomllib.load(source)
+              package = candidate_manifest.get("package")
+              if not isinstance(package, dict):
+                  raise SystemExit(f"{manifest_path} has no [package] table")
+              expected_org, expected_name = coordinate.split("/", 1)
+              if package.get("org") != expected_org or package.get("name") != expected_name:
+                  raise SystemExit(
+                      f"{manifest_path} identity drifted: "
+                      f"{package.get('org')!r}/{package.get('name')!r} != {coordinate}"
+                  )
+              version = package.get("version")
+              if not isinstance(version, str) or not satisfies_caret(requirement, version):
+                  raise SystemExit(
+                      f"{manifest_path} version {version!r} does not satisfy "
+                      f"{coordinate} {requirement}"
+                  )
           PY
 
       - name: Install Rust toolchain

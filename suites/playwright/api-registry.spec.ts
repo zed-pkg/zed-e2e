@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { createHash } from "node:crypto";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -127,7 +128,13 @@ test.describe("zed-api-server registry semantics", () => {
 
     const art = await request.get(`${API_URL}/v1/artifacts/${sha}`);
     expect(art.status()).toBe(200);
-    expect(Number(art.headers()["content-length"])).toBe(ver.size);
+    const bytes = await art.body();
+    // Fleet middleware is allowed to apply Brotli/other transfer encodings,
+    // which legitimately removes Content-Length and uses chunked framing.
+    // Content addressing is about the decoded entity bytes, not transport
+    // framing, so prove both the recorded size and digest after decoding.
+    expect(bytes.byteLength).toBe(ver.size);
+    expect(createHash("sha256").update(bytes).digest("hex")).toBe(sha);
 
     // A well-formed but unknown digest is a clean 404, not a 500.
     const missing = await request.get(`${API_URL}/v1/artifacts/${"0".repeat(64)}`);

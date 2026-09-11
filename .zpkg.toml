@@ -13,7 +13,7 @@ url = "https://github.com/zed-pkg/zed-e2e"
 
 [dependencies]
 "zed-pkg/zed-api-server" = "^0.1.0"
-"zed-pkg/zed-cli" = "^0.1.0"
+"zed-pkg/zed-cli" = "^0.3.0"
 "zed-pkg/zed-interfaces" = "^0.1.0"
 "zed-pkg/zed-web-server" = "^0.1.0"
 
@@ -48,6 +48,7 @@ exclude = [
   ".DS_Store",
 ]
 
+# Zed package manifests expose only the package-level `test` hook. Developer
+# task decomposition belongs in zed-env.toml schema 2.
 [scripts]
-typecheck = "npm ci && npm run typecheck"
-harness = "npm ci && npm run test:harness"
+test = "npm ci && npm run typecheck && npm run test:harness"

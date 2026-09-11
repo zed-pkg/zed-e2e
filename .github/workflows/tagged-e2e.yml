@@ -10,11 +10,11 @@ on:
       zed_cli_ref:
         description: "zed-cli tag or SHA (tags preferred)"
         required: true
-        default: "66009989605607e503a8061206c08db06ebd51f0"
+        default: "89b073aee73e5cb6d35aa211adcfa1d82dfb4d29"
       flags_2_env_ref:
         description: "flags-2-env tag or SHA"
         required: true
-        default: "682bfddaa43fcab839b045875ef5dfcfc721d343"
+        default: "2946224fb3a1bd84c0e39146b24f5f1ca8d69862"
       zed_interfaces_ref:
         description: "zed-interfaces tag, SHA, or branch"
         required: true
@@ -71,12 +71,43 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          repository: ORESoftware/flags-2-env
-          ref: ${{ inputs.flags_2_env_ref || '682bfddaa43fcab839b045875ef5dfcfc721d343' }}
+          repository: flags-2-env/flags-2-env
+          # Keep the E2E audit parser at the exact revision consumed by zed-cli.
+          ref: ${{ inputs.flags_2_env_ref || '2946224fb3a1bd84c0e39146b24f5f1ca8d69862' }}
           path: flags-2-env
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Install Rust toolchain declared by selected zed-cli
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain="$(python3 - <<'PY'
+          import tomllib
+          with open("zed-cli/rust-toolchain.toml", "rb") as source:
+              print(tomllib.load(source)["toolchain"]["channel"])
+          PY
+          )"
+          mapfile -t components < <(python3 - <<'PY'
+          import tomllib
+          with open("zed-cli/rust-toolchain.toml", "rb") as source:
+              values = tomllib.load(source)["toolchain"].get("components", [])
+          for value in values:
+              print(value)
+          PY
+          )
+          install_args=(toolchain install "$toolchain" --profile minimal --no-self-update)
+          for component in "${components[@]}"; do
+            install_args+=(--component "$component")
+          done
+          rustup "${install_args[@]}"
+          rustup default "$toolchain"
+          printf 'RUSTUP_TOOLCHAIN=%s\n' "$toolchain" >> "$GITHUB_ENV"
+          rustup run "$toolchain" rustc --version
+
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
           workspaces: |
@@ -86,6 +117,21 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
+
+      - name: Verify selected toolchain and parse tracked TOML
+        run: |
+          set -euo pipefail
+          python3 zed-e2e/scripts/check-zed-toolchain-toml.py \
+            --zed-cli-root zed-cli \
+            --flags-root flags-2-env \
+            --workflow zed-e2e/.github/workflows/tagged-e2e.yml
+          cargo metadata \
+            --manifest-path zed-cli/Cargo.toml \
+            --locked \
+            --no-deps \
+            --format-version 1 \
+            > "$RUNNER_TEMP/zed-cli-cargo-metadata.json"
+          test -s "$RUNNER_TEMP/zed-cli-cargo-metadata.json"
 
       - name: Build flags-2-env native parser
         working-directory: flags-2-env
@@ -106,8 +152,20 @@ jobs:
           npm run typecheck
           npm run test:harness
 
-      - name: Audit zed flags contract
-        run: flags-2-env/build/flags2env audit zed-cli/.cli-flags.toml
+      - name: Audit every zed CLI flags contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' specs < <(
+            find zed-cli -maxdepth 1 -type f \
+              \( -name '.cli-flags.toml' -o -name '.*-cli-flags.toml' \) \
+              -print0 | sort -z
+          )
+          test "${#specs[@]}" -ge 6
+          for spec in "${specs[@]}"; do
+            echo "auditing $spec"
+            flags-2-env/build/flags2env audit "$spec"
+          done
 
       - name: Run full end-to-end matrix
         working-directory: zed-e2e

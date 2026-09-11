@@ -32,7 +32,7 @@ env:
   ZED_CLIENTS_TS_INTERFACES_REV: 3c54298fc7a8c1b2f9c1d74f588c6118b38f197e
   ZED_CLIENTS_RUST_INTERFACES_REV: d11322f06ca6930ddcc34a745b4ef01e0b2bddc1
   ZED_CLIENTS_RUST_LIB_CORE_REV: c8af76191f50ad7a177eb68740e69bdfaa652ff6
-  ZED_LIB_CORE_INTERFACES_REV: 7d31f80dd8a310f218931165a3ad636a2f32b932
+  ZED_LIB_CORE_INTERFACES_REV: 0c2ffa7be791a44c8aa2a69ab4b1ea87aab4729c
   ZED_API_INTERFACES_REV: 4b87e425b04777b0ee413971dc1df805d24f295f
   ZED_WEB_INTERFACES_REV: 7d31f80dd8a310f218931165a3ad636a2f32b932
   ZED_API_LIB_CORE_REV: c3d486a1519381276fbec02aa25247f542924443
@@ -41,10 +41,12 @@ env:
   ZED_CLI_LIB_CORE_REV: eac0878750332b031bc12f6040b6a795a17e7417
   ZED_CLI_CLIENTS_REV: b32e089caea772f166204fb1c7bcaad6f56942fe
   ORES_MIDDLEWARE_REV: c759246bbd207841aa8fe9150214ee922c751b94
-  ZED_LIB_CORE_CANDIDATE: ff02d3ee5b4d6a2ea913e0ee19a8c21d334a11c9
-  ZED_API_CANDIDATE: 75365f2c2117488cfcff5e68978ef44f7d87be9b
-  ZED_WEB_CANDIDATE: 66493865ae0bb14367d2e529bf6f359756eb6d06
-  ZED_CLI_CANDIDATE: de20d3a1eee31f608556daaf461d66be76fc3e5e
+  FLAGS2ENV_REV: d7bad9ea7dfc657653368237e08903514cdca1ec
+  FIDUCIA_CLIENT_REV: d8df52a8fc4451e6b358d4085eb30ba8eb46d6d7
+  ZED_LIB_CORE_CANDIDATE: 4509f19e1d3242226f28f842f550085864582380
+  ZED_API_CANDIDATE: fa279cc9e776a4969953f5d7d0cf859c69c884a6
+  ZED_WEB_CANDIDATE: d3b9f0e44e559ec563f8228d28bf772db348d437
+  ZED_CLI_CANDIDATE: c2606c87c8b077dde39d2303bc787077ceb2c9fd
   ZED_CLIENTS_CANDIDATE: e53dca82e6c9d946a650bf453f48df0072221e10
 
 jobs:
@@ -134,18 +136,25 @@ jobs:
           # Build-graph identity is enforced at the native source/lock layer.
           # These are immutable Git revisions, not package-manager requirements.
           required_pins = {
-              "zed-lib-core/src/rust-orm/Cargo.toml": [
+              "zed-lib-core/src/rust/Cargo.toml": [
+                  os.environ["ZED_LIB_CORE_INTERFACES_REV"],
+              ],
+              "zed-lib-core/Cargo.lock": [
                   os.environ["ZED_LIB_CORE_INTERFACES_REV"],
               ],
               "zed-api-server.rs/Cargo.toml": [
                   os.environ["ZED_API_INTERFACES_REV"],
                   os.environ["ZED_API_LIB_CORE_REV"],
                   os.environ["ORES_MIDDLEWARE_REV"],
+                  os.environ["FLAGS2ENV_REV"],
+                  os.environ["FIDUCIA_CLIENT_REV"],
               ],
               "zed-api-server.rs/Cargo.lock": [
                   os.environ["ZED_API_INTERFACES_REV"],
                   os.environ["ZED_API_LIB_CORE_REV"],
                   os.environ["ORES_MIDDLEWARE_REV"],
+                  os.environ["FLAGS2ENV_REV"],
+                  os.environ["FIDUCIA_CLIENT_REV"],
               ],
               "zed-web-server.rs/Cargo.toml": [
                   os.environ["ZED_WEB_INTERFACES_REV"],
@@ -189,7 +198,7 @@ jobs:
                   if expected not in content:
                       raise SystemExit(f"{filename} does not pin {expected}")
 
-          # Package-composition identity is a separate authority.  The E2E
+          # Package-composition identity is a separate authority. The E2E
           # package declares deployable Zed packages; leaf Cargo dependencies
           # such as flags2env/fiducia/zed-lib are intentionally not mirrored
           # into an API package manifest merely to satisfy this gate.

@@ -82,10 +82,15 @@ jobs:
           test "$(git -C zed-api-server.rs rev-parse HEAD)" = "$ZED_API_REV"
           test "$(git -C zed-web-server.rs rev-parse HEAD)" = "$ZED_WEB_REV"
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
-        with:
-          toolchain: stable
+      - name: Install exact Rust authority from admitted zed-cli revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' zed-cli/rust-toolchain.toml)"
+          [[ "$toolchain" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          rustup toolchain install "$toolchain" --profile minimal --component rustfmt --component clippy --no-self-update
+          rustup default "$toolchain"
+          test "$(rustc --version | awk '{print $2}')" = "$toolchain"
 
       - name: Restore Rust build cache
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1

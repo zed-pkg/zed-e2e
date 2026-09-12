@@ -19,7 +19,7 @@ env/dec/*
 !env/enc/*.env.enc
 !env/template.env.example
 
-# nix
+# Nix and local scratch artifacts.
 .direnv/
 result
 result-*

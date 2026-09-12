@@ -42,6 +42,9 @@ jobs:
           persist-credentials: false
           show-progress: false
 
+      # Sibling checkouts the harness builds and drives. Their default branches
+      # are intentional inputs: this workflow is also a nightly compatibility
+      # canary, while every third-party action itself remains immutable.
       - name: Check out zed-interfaces
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -135,6 +138,8 @@ jobs:
       - name: Start one collision-safe bounded memory-backed registry stack
         working-directory: zed-e2e
         env:
+          # Official pgvector 0.8.6 + Postgres 16 Bookworm, pinned to the
+          # linux/amd64 manifest used by GitHub's ubuntu-24.04 runners.
           ZED_E2E_PG_IMAGE: pgvector/pgvector:0.8.6-pg16-bookworm@sha256:84a355869251af1a3379cfc9fa7b4dbf962c03f642a4bb7b339a203925071c43
           ZED_E2E_STORAGE_BACKEND: memory
           ZED_E2E_STORAGE_MEMORY_MAX_BYTES: "268435456"

@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "env_prefix": "ZED",
+  "state_dir": ".local-stack",
+  "test_command": "npm run e2e",
+  "services": [
+    {
+      "role": "api",
+      "repo": "../zed-api-server.rs",
+      "bin": "zed-api-server",
+      "port": 48080,
+      "bind_env": "BIND_ADDR",
+      "health_path": "/healthz"
+    },
+    {
+      "role": "web",
+      "repo": "../zed-web-server.rs",
+      "bin": "zed-web-server",
+      "port": 48081,
+      "bind_env": "BIND_ADDR",
+      "health_path": "/healthz"
+    },
+    {
+      "role": "admin-api",
+      "repo": "../zed-admin-api-server.rs",
+      "bin": "zed-admin-api-server",
+      "port": 48082,
+      "bind_env": "ADMIN_BIND_ADDR",
+      "health_path": "/healthz"
+    },
+    {
+      "role": "admin-web",
+      "repo": "../zed-admin-web-server.rs",
+      "bin": "zed-admin-web-server",
+      "port": 48083,
+      "bind_env": "ADMIN_BIND_ADDR",
+      "health_path": "/healthz"
+    }
+  ]
+}

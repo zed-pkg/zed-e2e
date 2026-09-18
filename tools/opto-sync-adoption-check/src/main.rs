@@ -111,7 +111,7 @@ fn validate_profile(profile: &Profile) -> Vec<String> {
     if profile.dependency
         != (Dependency {
             package: "opto-sync/opto-sync-clients".to_owned(),
-            range: "^0.2.0".to_owned(),
+            range: "^0.4.0".to_owned(),
             install_root: "zed_modules/opto-sync/opto-sync-clients".to_owned(),
         })
     {
@@ -203,8 +203,8 @@ fn validate_wrapper(profile: &Profile, wrapper: &Path, live: bool) -> Vec<String
         }
     };
 
-    if toml_string(&manifest, &["dependencies", "opto-sync/opto-sync-clients"]) != Some("^0.2.0") {
-        errors.push("wrapper dependency must pin opto-sync-clients to ^0.2.0".to_owned());
+    if toml_string(&manifest, &["dependencies", "opto-sync/opto-sync-clients"]) != Some("^0.4.0") {
+        errors.push("wrapper dependency must pin opto-sync-clients to ^0.4.0".to_owned());
     }
     if toml_string(&manifest, &["install", "dir"]) != Some("zed_modules") {
         errors.push("wrapper install.dir must equal zed_modules".to_owned());

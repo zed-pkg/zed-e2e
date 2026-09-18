@@ -52,7 +52,7 @@ jobs:
           assert isinstance(profile['syncPullRequest'], int) and profile['syncPullRequest'] > 0
           assert profile['dependency'] == {
               'package': 'opto-sync/opto-sync-clients',
-              'range': '^0.2.0',
+              'range': '^0.4.0',
           }
           assert profile['collections'] and len(profile['collections']) == len(set(profile['collections']))
           assert {'queuedOptimistic', 'remoteConfirmed'} <= set(profile['writeStrategies'])
@@ -132,7 +132,7 @@ jobs:
           license = "MIT"
 
           [dependencies]
-          "opto-sync/opto-sync-clients" = "^0.2.0"
+          "opto-sync/opto-sync-clients" = "^0.4.0"
 
           [install]
           dir = "zed_modules"

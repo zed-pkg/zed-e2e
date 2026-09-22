@@ -1,0 +1,47 @@
+name: certify ores-websocket 13
+
+on:
+  push:
+    branches:
+      - certify/ores-websocket-13-20260922
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  zed-manifest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out certification carrier
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Check out exact ores-websocket head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: ORESoftware/ores-websocket
+          ref: 6d36f70197c0b047c8d7b12d5ad44e861716a8b7
+          path: ores-websocket
+          persist-credentials: false
+
+      - name: Check out current zed CLI authority
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: zed-pkg/zed-cli
+          ref: main
+          path: zed-cli
+          persist-credentials: false
+
+      - name: Install Rust 1.88
+        shell: bash
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup default 1.88.0
+          rustc --version
+          cargo --version
+
+      - name: Validate exact websocket manifest with Zed authority
+        shell: bash
+        run: |
+          cargo run --locked --manifest-path zed-cli/Cargo.toml -- validate --manifest "$GITHUB_WORKSPACE/ores-websocket/.zpkg.toml" --json

@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      GH_TOKEN: ${{ secrets.FLEET_GITHUB_READ_TOKEN || secrets.SYNC_FLEET_TOKEN }}
+      GH_TOKEN: ${{ secrets.ZED_PKG_CHECKOUT_TOKEN || secrets.FLEET_GITHUB_READ_TOKEN || secrets.SYNC_FLEET_TOKEN }}
       BMSCL_RUNTIME_CONTROL_SECRET: 0123456789abcdef0123456789abcdef
     steps:
       - name: Checkout E2E harness
@@ -38,10 +38,12 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${GH_TOKEN:-}" || {
-            echo 'FLEET_GITHUB_READ_TOKEN (or compatibility SYNC_FLEET_TOKEN) is not configured for zed-e2e' >&2
+            echo 'No private checkout token is configured for zed-e2e' >&2
             exit 1
           }
           gh api user --jq '.login'
+          gh api repos/beamscale/bmscl-supervisor --jq '"beamscale-read=ok visibility=\(.visibility)"'
+          gh api repos/ORESoftware/ores-compose --jq '"ores-compose-read=ok visibility=\(.visibility)"'
 
       - name: Set up Erlang toolchain
         uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1

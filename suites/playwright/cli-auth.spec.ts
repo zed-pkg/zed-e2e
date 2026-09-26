@@ -17,6 +17,7 @@ interface RequestRecord {
 const requests: RequestRecord[] = [];
 let authOrigin = "";
 let exchangeSequence = 0;
+let delegationSequence = 0;
 
 function json(res: ServerResponse, status: number, body?: unknown): void {
   if (body === undefined) {
@@ -89,6 +90,29 @@ const server = createServer(async (req, res) => {
         shared_user_id: "shared-user",
         provider: "supabase",
         roles: ["publisher"],
+      });
+      return;
+    }
+    if (url.pathname === "/shared/auth/delegate") {
+      delegationSequence += 1;
+      if (
+        req.headers.authorization === undefined ||
+        typeof body.client_id !== "string" ||
+        body.client_id !== "zpkg-cli" ||
+        body.audience !== "zed-pkg" ||
+        !Array.isArray(body.scopes) ||
+        body.scopes.length !== 1 ||
+        body.scopes[0] !== "zpkg:registry"
+      ) {
+        json(res, 403, { error: "invalid delegation request" });
+        return;
+      }
+      json(res, 200, {
+        access_token: `zed-delegated-access-${delegationSequence}`,
+        token_type: "Bearer",
+        expires_at: expiresAt,
+        audience: "zed-pkg",
+        scope: "zpkg:registry",
       });
       return;
     }
@@ -188,6 +212,8 @@ test.describe("zed CLI dual authentication", () => {
         const stored = readFileSync(sessionFile, "utf8");
         expect(stored).toContain("supabase-login-access");
         expect(stored).toContain("shared-exchanged-access-");
+        expect(stored).toContain("zed-delegated-access-");
+        expect(stored).toContain("zed-delegated-access-");
         expect(stored).toContain("publisher");
         if (process.platform !== "win32") {
           expect(statSync(authDir).mode & 0o777).toBe(0o700);
@@ -226,15 +252,20 @@ test.describe("zed CLI dual authentication", () => {
       expect(status.stdout).toContain("supabase+shared-auth");
       expect(status.stdout).toContain("shared-auth JWT expires at");
       expect(status.stdout).toContain("Supabase JWT expires at");
+      expect(status.stdout).toContain("Zed delegated JWT expires at");
 
       const beforeRefresh = await runAuth(["auth", "token"], home);
       expect(beforeRefresh.code, beforeRefresh.stderr).toBe(0);
-      expect(beforeRefresh.stdout.trim()).toMatch(/^shared-exchanged-access-/);
+      expect(beforeRefresh.stdout.trim()).toMatch(/^zed-delegated-access-/);
+      expect(beforeRefresh.stdout).not.toContain("shared-exchanged-access-");
+      expect(beforeRefresh.stdout).not.toContain("supabase-login-access");
 
+      const beforeDelegationSequence = delegationSequence;
       const refreshed = await runAuth(["auth", "refresh"], home);
       expect(refreshed.code, refreshed.stderr).toBe(0);
       const afterRefresh = await runAuth(["auth", "token"], home);
-      expect(afterRefresh.stdout.trim()).toBe("shared-refreshed-access");
+      expect(afterRefresh.stdout.trim()).toMatch(/^zed-delegated-access-/);
+      expect(delegationSequence).toBeGreaterThan(beforeDelegationSequence);
 
       expect(
         requests.some(
@@ -295,7 +326,8 @@ test.describe("zed CLI dual authentication", () => {
       );
       expect(result.code, result.stderr).toBe(0);
       const token = await runAuth(["auth", "token"], home);
-      expect(token.stdout.trim()).toBe("shared-direct-access");
+      expect(token.stdout.trim()).toMatch(/^zed-delegated-access-/);
+      expect(token.stdout).not.toContain("shared-direct-access");
       expect(
         requests.some(
           (request) =>
@@ -306,6 +338,20 @@ test.describe("zed CLI dual authentication", () => {
       ).toBeTruthy();
     } finally {
       rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("Shared Auth delegation is exact and uses only the base Shared Auth identity token", async () => {
+    const delegateRequests = requests.filter((request) => request.path === "/shared/auth/delegate");
+    expect(delegateRequests.length).toBeGreaterThan(0);
+    for (const request of delegateRequests) {
+      expect(request.body).toEqual({
+        client_id: "zpkg-cli",
+        audience: "zed-pkg",
+        scopes: ["zpkg:registry"],
+      });
+      expect(request.authorization).toMatch(/^Bearer shared-(?:exchanged|direct|refreshed)-access/);
+      expect(request.authorization).not.toContain("supabase-");
     }
   });
 

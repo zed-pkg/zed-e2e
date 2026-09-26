@@ -213,7 +213,6 @@ test.describe("zed CLI dual authentication", () => {
         expect(stored).toContain("supabase-login-access");
         expect(stored).toContain("shared-exchanged-access-");
         expect(stored).toContain("zed-delegated-access-");
-        expect(stored).toContain("zed-delegated-access-");
         expect(stored).toContain("publisher");
         if (process.platform !== "win32") {
           expect(statSync(authDir).mode & 0o777).toBe(0o700);
@@ -235,6 +234,7 @@ test.describe("zed CLI dual authentication", () => {
         const stored = readFileSync(path.join(home, "auth", "sessions.toml"), "utf8");
         expect(stored).toContain("supabase-signup-access");
         expect(stored).toContain("shared-exchanged-access-");
+        expect(stored).toContain("zed-delegated-access-");
       } finally {
         rmSync(home, { recursive: true, force: true });
       }

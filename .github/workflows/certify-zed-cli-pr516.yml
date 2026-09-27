@@ -1,0 +1,73 @@
+name: certify zed-cli PR 516 private read delegation
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/certify-zed-cli-pr516.yml'
+      - 'docs/zed-cli-pr516-certification.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-private-read-delegation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out certification repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Check out exact zed-cli product head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: zed-pkg/zed-cli
+          ref: 2ad562ac322e461cfd6e5938c1b78407f525c2e4
+          path: product
+          persist-credentials: false
+          show-progress: false
+
+      - name: Verify exact security-critical product blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C product rev-parse HEAD)" = "2ad562ac322e461cfd6e5938c1b78407f525c2e4"
+          test "$(git hash-object product/src/auth.rs)" = "f0922c3b529fd5cbac4154bdc4c9125cc18d2633"
+          test "$(git hash-object product/src/config.rs)" = "50561dac14df5321ab8d0a3ac77ef392470c3208"
+          grep -F 'const ZPKG_CLI_CLIENT_ID: &str = "zpkg-cli";' product/src/auth.rs
+          grep -F 'const ZPKG_REGISTRY_AUDIENCE: &str = "zed-pkg";' product/src/auth.rs
+          grep -F 'const ZPKG_PACKAGES_READ_SCOPE: &str = "zpkg:packages:read";' product/src/auth.rs
+
+      - name: Install repository-declared Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
+
+      - name: Run exact private-read delegation regression
+        working-directory: product
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked private_read_delegation_is_cached_and_never_replaces_identity_bearer -- --exact
+
+      - name: Prove delegation stays separate from ordinary bearer lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const source = readFileSync('product/src/auth.rs', 'utf8');
+          assert.match(source, /pub fn resolve_registry_read_bearer/);
+          assert.match(source, /private package access requires Shared Auth delegation/);
+          assert.match(source, /session\.zed_registry_read = Some\(pair\)/);
+          assert.match(source, /pub fn resolve_bearer/);
+          assert.doesNotMatch(
+            source.slice(source.indexOf('pub fn resolve_registry_read_bearer'), source.indexOf('fn refresh_session')),
+            /session\.supabase[\s\S]*access_token\.clone\(\)/
+          );
+          NODE

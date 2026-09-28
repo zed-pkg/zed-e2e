@@ -211,7 +211,7 @@ jobs:
           expected_package_dependencies = {
               "zed-pkg/zed-api-server": ("^0.1.0", "zed-api-server.rs"),
               "zed-pkg/zed-cli": ("^0.3.0", "zed-cli"),
-              "zed-pkg/zed-interfaces": ("^0.1.0", "zed-interfaces"),
+              "zed-pkg/zed-interfaces": ("^0.1.1", "zed-interfaces"),
               "zed-pkg/zed-web-server": ("^0.1.0", "zed-web-server.rs"),
           }
 

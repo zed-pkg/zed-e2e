@@ -1,0 +1,46 @@
+schema_version: ores.compose.v1
+project: beamscale-critical-section-e2e
+allow_lazy_start: false
+
+services:
+  auth:
+    runtime: host
+    working_dir: .
+    command: ["python3", "auth_stub.py"]
+    healthcheck:
+      command: ["curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:9191/healthz"]
+      interval_ms: 500
+      timeout_ms: 1000
+      retries: 40
+
+  supervisor:
+    runtime: host
+    working_dir: .
+    command: ["bash", "start_supervisor.sh"]
+    healthcheck:
+      command: ["python3", "tcp_health.py", "127.0.0.1", "9101"]
+      interval_ms: 500
+      timeout_ms: 1000
+      retries: 60
+
+  runtime_host:
+    runtime: host
+    working_dir: .
+    command: ["bash", "start_runtime_host.sh"]
+    depends_on: [supervisor]
+    healthcheck:
+      command: ["curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:9090/healthz"]
+      interval_ms: 500
+      timeout_ms: 1000
+      retries: 80
+
+  api:
+    runtime: host
+    working_dir: .
+    command: ["bash", "start_api.sh"]
+    depends_on: [auth, runtime_host]
+    healthcheck:
+      command: ["curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8081/healthz"]
+      interval_ms: 500
+      timeout_ms: 1000
+      retries: 80

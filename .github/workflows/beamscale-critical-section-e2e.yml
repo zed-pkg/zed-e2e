@@ -1,0 +1,163 @@
+name: BeamScale critical-section e2e
+
+on:
+  push:
+    branches:
+      - test/beamscale-critical-section-e2e-20260925
+    paths:
+      - .github/workflows/beamscale-critical-section-e2e.yml
+      - beamscale-critical-section-e2e/**
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/beamscale-critical-section-e2e.yml
+      - beamscale-critical-section-e2e/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beamscale-critical-section-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  critical-section-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ secrets.ZED_PKG_CHECKOUT_TOKEN || secrets.FLEET_GITHUB_READ_TOKEN || secrets.SYNC_FLEET_TOKEN }}
+      BMSCL_RUNTIME_CONTROL_SECRET: 0123456789abcdef0123456789abcdef
+    steps:
+      - name: Checkout E2E harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Require cross-org read credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN:-}" || {
+            echo 'No private checkout token is configured for zed-e2e' >&2
+            exit 1
+          }
+          gh api user --jq '.login'
+          gh api repos/beamscale/bmscl-supervisor --jq '"beamscale-read=ok visibility=\(.visibility)"'
+          gh api repos/ORESoftware/ores-compose --jq '"ores-compose-read=ok visibility=\(.visibility)"'
+
+      - name: Set up Erlang toolchain
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
+        with:
+          otp-version: '27.3'
+          rebar3-version: '3.24.0'
+
+      - name: Check Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc --version
+          cargo --version
+
+      - name: Clone exact feature inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE/beamscale-critical-section-e2e/workspace"
+          mkdir -p "$root"
+          gh repo clone beamscale/bmscl-api-server.rs "$root/api" -- --branch feat/critical-section-deploy-api-v1 --single-branch
+          gh repo clone beamscale/bmscl-supervisor "$root/supervisor" -- --branch feat/critical-section-actors-v1 --single-branch
+          gh repo clone beamscale/bmscl-infra "$root/infra" -- --branch main --single-branch
+          gh repo clone ORESoftware/ores-compose "$root/ores-compose" -- --branch main --single-branch
+          {
+            echo "api=$(git -C "$root/api" rev-parse HEAD)"
+            echo "supervisor=$(git -C "$root/supervisor" rev-parse HEAD)"
+            echo "infra=$(git -C "$root/infra" rev-parse HEAD)"
+            echo "ores_compose=$(git -C "$root/ores-compose" rev-parse HEAD)"
+          } | tee "$GITHUB_WORKSPACE/beamscale-critical-section-e2e/input-shas.txt"
+
+      - name: Patch local mock transport to real BEAM guest control
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 beamscale-critical-section-e2e/patch_runtime_host.py \
+            beamscale-critical-section-e2e/workspace/infra/modules/tenant_runtime/runtime-host/src/main.rs
+          git -C beamscale-critical-section-e2e/workspace/infra diff --check
+
+      - name: Build API, runtime host, supervisor, and ores-compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE/beamscale-critical-section-e2e/workspace"
+          cargo build --manifest-path "$root/api/Cargo.toml"
+          cargo build --manifest-path "$root/infra/modules/tenant_runtime/runtime-host/Cargo.toml"
+          cargo build --manifest-path "$root/ores-compose/Cargo.toml" --bin ores-compose
+          (
+            cd "$root/supervisor"
+            rebar3 compile
+          )
+          erlc \
+            -o "$root/supervisor/_build/default/lib/bmscl_supervisor/ebin" \
+            "$GITHUB_WORKSPACE/beamscale-critical-section-e2e/bmscl_e2e_durable_store.erl"
+
+      - name: Prepare local service credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' '0123456789abcdef0123456789abcdef' > beamscale-critical-section-e2e/security_state_token
+          chmod 600 beamscale-critical-section-e2e/security_state_token
+
+      - name: Validate ores-compose topology
+        shell: bash
+        run: |
+          set -euo pipefail
+          ores="$GITHUB_WORKSPACE/beamscale-critical-section-e2e/workspace/ores-compose/target/debug/ores-compose"
+          "$ores" check "$GITHUB_WORKSPACE/beamscale-critical-section-e2e/.ores-compose.yaml"
+          "$ores" plan "$GITHUB_WORKSPACE/beamscale-critical-section-e2e/.ores-compose.yaml"
+
+      - name: Run local system and critical-section journey
+        shell: bash
+        run: |
+          set -euo pipefail
+          harness="$GITHUB_WORKSPACE/beamscale-critical-section-e2e"
+          ores="$harness/workspace/ores-compose/target/debug/ores-compose"
+          log="$harness/ores-compose.log"
+          cleanup() {
+            "$ores" down "$harness/.ores-compose.yaml" >/dev/null 2>&1 || true
+            if [[ -n "${compose_pid:-}" ]]; then
+              kill -INT "$compose_pid" >/dev/null 2>&1 || true
+              wait "$compose_pid" >/dev/null 2>&1 || true
+            fi
+            echo '--- ores-compose log ---'
+            cat "$log" || true
+          }
+          trap cleanup EXIT
+
+          "$ores" up \
+            --skip-zed-pkg \
+            --skip-stack-sync \
+            --skip-source-sync \
+            "$harness/.ores-compose.yaml" >"$log" 2>&1 &
+          compose_pid=$!
+
+          for _ in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:8081/healthz >/dev/null 2>&1; then
+              break
+            fi
+            if ! kill -0 "$compose_pid" >/dev/null 2>&1; then
+              echo 'ores-compose exited before API became healthy' >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:8081/healthz >/dev/null
+          python3 "$harness/e2e.py"
+
+      - name: Upload textual proof summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '--- input SHAs ---'
+          cat beamscale-critical-section-e2e/input-shas.txt 2>/dev/null || true
+          echo '--- E2E proof ---'
+          cat beamscale-critical-section-e2e/proof.json 2>/dev/null || true

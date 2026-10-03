@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "zed.shared-auth-delegation.v1",
+  "audience": "zed-pkg",
+  "clients": {
+    "web": {
+      "authorizedParty": "zpkg-web",
+      "scopes": [
+        "zpkg:account"
+      ],
+      "resourceClass": "account"
+    },
+    "cli": {
+      "authorizedParty": "zpkg-cli",
+      "scopes": [
+        "zpkg:packages:read"
+      ],
+      "resourceClass": "private-package-read"
+    }
+  },
+  "requiredDelegatedClaims": [
+    "sub",
+    "sid",
+    "jti",
+    "parent_jti",
+    "aud",
+    "azp",
+    "scope",
+    "exp"
+  ],
+  "privatePackagePolicy": {
+    "providerJwtIsAuthorization": false,
+    "optimisticIdentityMayAuthorize": false,
+    "reconciledOrResourceAuthoritativeProofRequired": true,
+    "cliReadScopeMayWrite": false,
+    "privateResponsesSharedCacheable": false,
+    "privateArtifactCapabilityRequiresExactSha256": true
+  }
+}

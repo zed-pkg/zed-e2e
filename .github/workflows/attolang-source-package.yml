@@ -1,0 +1,60 @@
+name: AttoLang source-package boundary (real Zed; no compiler)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/attolang-source-package.yml'
+      - 'suites/cli/attolang-source-package-boundary.sh'
+      - 'README.md'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/attolang-source-package.yml'
+      - 'suites/cli/attolang-source-package-boundary.sh'
+      - 'README.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact zed-e2e PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          path: zed-e2e
+      - name: Check out pinned Zed CLI for source package proof
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          repository: zed-pkg/zed-cli
+          ref: 388161f681bac8ae704a22a593280ceed6cc4fa9
+          path: zed-cli
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' zed-cli/rust-toolchain.toml)"
+          [[ "$toolchain" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          rustup toolchain install "$toolchain" --profile minimal --no-self-update
+          rustup default "$toolchain"
+          test "$(rustc --version | awk '{print $2}')" = "$toolchain"
+      - name: Cache Zed CLI build
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          workspaces: zed-cli -> target
+      - name: Build real Zed
+        working-directory: zed-cli
+        run: cargo build --locked --bin zed
+      - name: Check script syntax
+        run: bash -n zed-e2e/suites/cli/attolang-source-package-boundary.sh
+      - name: Verify AttoLang source artifact and negative boundary
+        env:
+          ZED_BIN: ${{ github.workspace }}/zed-cli/target/debug/zed
+        run: bash zed-e2e/suites/cli/attolang-source-package-boundary.sh
+      - name: Record proof ceiling
+        run: echo 'SOURCE_ARTIFACT_ONLY - does not prove AttoLang compiler parsing or guest runtime execution'

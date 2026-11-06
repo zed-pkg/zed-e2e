@@ -50,6 +50,27 @@ bash suites/cli/pack-publication-boundary.sh
 bash suites/cli/pack-nested-publication-boundary.sh
 ```
 
+An independent **AttoLang source package** boundary checks that the real, pinned
+Zed CLI validates a compatibility `.zpkg.toml`, packages both the compiler's
+`.ores.pkg.toml` marker and a `.atto` source file **byte-for-byte**, repeats
+the pack deterministically, and rejects a Git-ignored synthetic secret until
+a tracked, reviewed `.zedignore` excludes it:
+
+```bash
+# Use the same locally built real zed binary.
+bash suites/cli/attolang-source-package-boundary.sh
+```
+
+The dedicated workflow `.github/workflows/attolang-source-package.yml` pins
+`zed-cli` to commit `388161f681bac8ae704a22a593280ceed6cc4fa9`. This is
+**SOURCE_ARTIFACT_ONLY** evidence: the source fixture is not parsed or run by
+any AttoLang compiler. Canonical `attolang` package language metadata remains
+tracked at [zed-interfaces #182](https://github.com/zed-pkg/zed-interfaces/issues/182),
+the installed-path bridge at
+[zed-cli #543](https://github.com/zed-pkg/zed-cli/pull/543), and real five-backend
+publish-to-compile-to-execute proof at
+[zed-e2e #71](https://github.com/zed-pkg/zed-e2e/issues/71).
+
 The focused suites create isolated repositories and package state under temporary directories. The
 primary suite checks the ordinary Git-backed path and a runtime with `git` deliberately absent from
 `PATH`, then opens each successful `tar.gz` artifact to prove `secret.env` was not published. The

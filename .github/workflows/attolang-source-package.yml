@@ -34,6 +34,10 @@ jobs:
           repository: zed-pkg/zed-cli
           ref: 388161f681bac8ae704a22a593280ceed6cc4fa9
           path: zed-cli
+      # This must run before Cargo: a broken upstream lock must not prevent
+      # exercising the source fixture's own syntax gate.
+      - name: Check script syntax
+        run: bash -n zed-e2e/suites/cli/attolang-source-package-boundary.sh
       - name: Install pinned Rust toolchain
         shell: bash
         run: |
@@ -50,8 +54,6 @@ jobs:
       - name: Build real Zed
         working-directory: zed-cli
         run: cargo build --locked --bin zed
-      - name: Check script syntax
-        run: bash -n zed-e2e/suites/cli/attolang-source-package-boundary.sh
       - name: Verify AttoLang source artifact and negative boundary
         env:
           ZED_BIN: ${{ github.workspace }}/zed-cli/target/debug/zed

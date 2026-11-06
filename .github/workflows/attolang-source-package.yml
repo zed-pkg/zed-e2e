@@ -27,12 +27,15 @@ jobs:
         with:
           persist-credentials: false
           path: zed-e2e
+      # Exact tested lock-graph repair head from zed-cli #554. This is an
+      # isolated PR validation pin; release consumers must repin to an
+      # independently reviewed and merged CLI revision.
       - name: Check out pinned Zed CLI for source package proof
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           repository: zed-pkg/zed-cli
-          ref: 388161f681bac8ae704a22a593280ceed6cc4fa9
+          ref: f5d0faafef7c8c73b230f22e02ddb5bf8b178b6c
           path: zed-cli
       # This must run before Cargo: a broken upstream lock must not prevent
       # exercising the source fixture's own syntax gate.

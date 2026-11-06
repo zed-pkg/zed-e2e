@@ -1,0 +1,72 @@
+name: Candidate locked Zed package publication boundaries
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/attolang-pack-candidate.yml'
+      - 'suites/cli/pack-publication-boundary.sh'
+      - 'suites/cli/pack-nested-publication-boundary.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-artifact-pack:
+    name: Exact-head candidate Zed package pack admission (no compiler)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact Zed E2E candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          path: zed-e2e
+      - name: Check out exact previously built CLI lock repair candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: zed-pkg/zed-cli
+          ref: 2ae901aa129c813deb4cb411baecd4511167a6ae
+          persist-credentials: false
+          path: zed-cli
+      - name: Verify exact source and CLI heads
+        shell: bash
+        env:
+          E2E_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          CLI_SHA: 2ae901aa129c813deb4cb411baecd4511167a6ae
+        run: |
+          set -euo pipefail
+          test "$(git -C zed-e2e rev-parse HEAD)" = "$E2E_SHA"
+          test "$(git -C zed-cli rev-parse HEAD)" = "$CLI_SHA"
+      - name: Syntax check independent of Cargo availability
+        shell: bash
+        run: |
+          bash -n zed-e2e/suites/cli/pack-publication-boundary.sh
+          bash -n zed-e2e/suites/cli/pack-nested-publication-boundary.sh
+      - name: Install CLI's immutable Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' zed-cli/rust-toolchain.toml)"
+          [[ "$toolchain" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          rustup toolchain install "$toolchain" --profile minimal --no-self-update
+          rustup default "$toolchain"
+          test "$(rustc --version | awk '{print $2}')" = "$toolchain"
+      - name: Cache immutable Rust build inputs
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          workspaces: zed-cli -> target
+      - name: Prove real Zed locked build before packaging
+        working-directory: zed-cli
+        run: cargo build --locked --bin zed
+      - name: Exercise real source publication and secret rejection
+        env:
+          ZED_BIN: ${{ github.workspace }}/zed-cli/target/debug/zed
+        run: bash zed-e2e/suites/cli/pack-publication-boundary.sh
+      - name: Exercise nested and generated artifact refusal
+        env:
+          ZED_BIN: ${{ github.workspace }}/zed-cli/target/debug/zed
+        run: bash zed-e2e/suites/cli/pack-nested-publication-boundary.sh
+      - name: Limit evidence class
+        run: echo 'SOURCE_ARTIFACT_ONLY: installed CLI and package source validated; no AttoLang compilation or guest execution'

@@ -17,6 +17,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: attolang-source-boundary-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   source-only:
     runs-on: ubuntu-24.04
@@ -25,8 +29,13 @@ jobs:
       - name: Check out exact zed-e2e PR head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           path: zed-e2e
+      - name: Verify exact E2E test tree
+        env:
+          EXPECTED_E2E_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git -C zed-e2e rev-parse HEAD)" = "$EXPECTED_E2E_SHA"
       # Exact tested lock-graph repair head from zed-cli #554. This is an
       # isolated PR validation pin; release consumers must repin to an
       # independently reviewed and merged CLI revision.
@@ -37,6 +46,8 @@ jobs:
           repository: zed-pkg/zed-cli
           ref: f5d0faafef7c8c73b230f22e02ddb5bf8b178b6c
           path: zed-cli
+      - name: Verify pinned CLI tree identity
+        run: test "$(git -C zed-cli rev-parse HEAD)" = "f5d0faafef7c8c73b230f22e02ddb5bf8b178b6c"
       # This must run before Cargo: a broken upstream lock must not prevent
       # exercising the source fixture's own syntax gate.
       - name: Check script syntax

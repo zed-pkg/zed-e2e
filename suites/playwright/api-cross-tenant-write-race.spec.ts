@@ -69,7 +69,7 @@ test.describe('cross-tenant registry mutation races are fail-closed', () => {
           const result = await request.get(metadataURL(org));
           expect(result.status()).toBe(200);
           const meta = await result.json();
-          expect(meta.yanked).toBe(true, 'only the own owner can yank');
+          expect(meta.yanked, 'only the own owner can yank').toBe(true);
           expect(meta.sha256).toBe(originals[index].sha256);
         }
       } finally {

@@ -18,7 +18,10 @@ permissions:
 # canary for API/CLI/web/interface drift.
 env:
   ZED_E2E_API_REF: main
-  ZED_E2E_CLI_REF: main
+  # Use a candidate with a proven immutable Cargo.lock only for PR validation.
+  # Scheduled and main-branch runs intentionally remain moving compatibility
+  # canaries for independently released zed-cli/main.
+  ZED_E2E_CLI_REF: ${{ github.event_name == 'pull_request' && 'f5d0faafef7c8c73b230f22e02ddb5bf8b178b6c' || 'main' }}
 
 concurrency:
   group: zed-e2e-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -75,6 +78,10 @@ jobs:
           path: zed-web-server.rs
           persist-credentials: false
           show-progress: false
+
+      - name: Verify pinned PR CLI admission authority
+        if: github.event_name == 'pull_request'
+        run: test "$(git -C zed-cli rev-parse HEAD)" = "f5d0faafef7c8c73b230f22e02ddb5bf8b178b6c"
 
       - name: Verify default-branch memory backend and server-mode CLI source
         run: |

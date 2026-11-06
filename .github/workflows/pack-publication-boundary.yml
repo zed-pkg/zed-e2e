@@ -38,13 +38,24 @@ jobs:
           persist-credentials: false
           path: zed-e2e
 
-      - name: Check out current zed-cli main
+      # Temporarily pin the reproducibly built source from zed-cli #554.
+      # It is an unmerged candidate: replace with a reviewed merge commit
+      # before declaring this boundary suitable as a release gate.
+      - name: Check out immutable tested zed-cli candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           repository: zed-pkg/zed-cli
-          ref: main
+          ref: f5d0faafef7c8c73b230f22e02ddb5bf8b178b6c
           path: zed-cli
+
+      - name: Verify exact CLI source revision
+        shell: bash
+        env:
+          EXPECTED_SHA: f5d0faafef7c8c73b230f22e02ddb5bf8b178b6c
+        run: |
+          set -euo pipefail
+          test "$(git -C zed-cli rev-parse HEAD)" = "$EXPECTED_SHA"
 
       - name: Install exact Rust authority from checked-out zed-cli
         shell: bash

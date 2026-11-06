@@ -27,13 +27,20 @@ jobs:
         with:
           persist-credentials: false
           path: zed-e2e
+      # Exact tested lock-graph repair head from zed-cli #554. This is an
+      # isolated PR validation pin; release consumers must repin to an
+      # independently reviewed and merged CLI revision.
       - name: Check out pinned Zed CLI for source package proof
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           repository: zed-pkg/zed-cli
-          ref: 388161f681bac8ae704a22a593280ceed6cc4fa9
+          ref: f5d0faafef7c8c73b230f22e02ddb5bf8b178b6c
           path: zed-cli
+      # This must run before Cargo: a broken upstream lock must not prevent
+      # exercising the source fixture's own syntax gate.
+      - name: Check script syntax
+        run: bash -n zed-e2e/suites/cli/attolang-source-package-boundary.sh
       - name: Install pinned Rust toolchain
         shell: bash
         run: |
@@ -50,8 +57,6 @@ jobs:
       - name: Build real Zed
         working-directory: zed-cli
         run: cargo build --locked --bin zed
-      - name: Check script syntax
-        run: bash -n zed-e2e/suites/cli/attolang-source-package-boundary.sh
       - name: Verify AttoLang source artifact and negative boundary
         env:
           ZED_BIN: ${{ github.workspace }}/zed-cli/target/debug/zed

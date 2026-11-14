@@ -150,6 +150,23 @@ CHANGED_DIGEST="$(sha256sum "$ARCHIVE" | cut -d ' ' -f1)"
 [[ "$FIRST_DIGEST" != "$CHANGED_DIGEST" ]] || \
   fail 'changed AttoLang source reused a stale archive digest'
 
+# A different committed native project manifest MUST also change the
+# source artifact. This is independent of the .atto mutation above: a stale
+# archive can preserve guest bytes while silently dropping compiler import
+# configuration changes. The compiler is still NOT executed here.
+sed -i 's/import_paths = \[\]/import_paths = ["src"]/' "$PACKAGE/.ores.pkg.toml"
+git -C "$PACKAGE" add .ores.pkg.toml
+git -C "$PACKAGE" -c user.name='Zed E2E' \
+  -c user.email='zed-e2e@example.invalid' commit -qm 'mutate native AttoLang project import paths'
+pack
+ARCHIVE="$(archive_path)"
+check_archive "$ARCHIVE"
+MANIFEST_DIGEST="$(sha256sum "$ARCHIVE" | cut -d ' ' -f1)"
+[[ "$CHANGED_DIGEST" != "$MANIFEST_DIGEST" ]] || \
+  fail 'changed .ores.pkg.toml reused a stale archive digest'
+grep -Fq 'import_paths = ["src"]' "$ROOT/logs/.ores.pkg.toml.actual" || \
+  fail 'packed native manifest did not preserve changed compiler import paths'
+
 # A Git-ignored secret is not automatically safe to publish: require the same
 # reviewable publication boundary for AttoLang as every other Zed package.
 printf 'TOKEN=synthetic-do-not-publish\n' >"$PACKAGE/private.env"

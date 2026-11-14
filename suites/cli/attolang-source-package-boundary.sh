@@ -8,7 +8,7 @@ set -euo pipefail
   printf 'ZED_BIN is not executable: %s\n' "$ZED_BIN" >&2
   exit 2
 }
-for command in git tar sha256sum cmp; do
+for command in git tar sha256sum cmp find grep cut; do
   command -v "$command" >/dev/null || {
     printf 'required tool is missing: %s\n' "$command" >&2
     exit 2
@@ -94,7 +94,15 @@ pack() {
 }
 
 archive_path() {
-  find "$PACKAGE/.zed/pack" -maxdepth 1 -name '*.tar.gz' -type f -print -quit
+  # `find -print -quit` can select a stale first archive when multiple
+  # candidates exist, producing a false "deterministic" digest comparison.
+  # One fixture pack must correspond to exactly one artifact.
+  local archives=()
+  mapfile -d '' -t archives < <(
+    find "$PACKAGE/.zed/pack" -maxdepth 1 -name '*.tar.gz' -type f -print0
+  )
+  [[ "${#archives[@]}" -eq 1 ]] ||     fail "expected exactly one package archive, found ${#archives[@]}"
+  printf '%s\n' "${archives[0]}"
 }
 
 check_archive() {
@@ -127,6 +135,20 @@ check_archive "$ARCHIVE"
 SECOND_DIGEST="$(sha256sum "$ARCHIVE" | cut -d ' ' -f1)"
 [[ "$FIRST_DIGEST" == "$SECOND_DIGEST" ]] || \
   fail 'unchanged AttoLang source did not produce deterministic packed bytes'
+
+# A different committed source tree MUST change the packed byte digest. This
+# catches a stale first artifact being re-selected and caches that return an
+# old source archive after a real edit. This is packaging evidence only.
+printf '// second committed AttoLang source revision\n' >>"$PACKAGE/src/source.atto"
+git -C "$PACKAGE" add src/source.atto
+git -C "$PACKAGE" -c user.name='Zed E2E' \
+  -c user.email='zed-e2e@example.invalid' commit -qm 'mutate source for freshness proof'
+pack
+ARCHIVE="$(archive_path)"
+check_archive "$ARCHIVE"
+CHANGED_DIGEST="$(sha256sum "$ARCHIVE" | cut -d ' ' -f1)"
+[[ "$FIRST_DIGEST" != "$CHANGED_DIGEST" ]] || \
+  fail 'changed AttoLang source reused a stale archive digest'
 
 # A Git-ignored secret is not automatically safe to publish: require the same
 # reviewable publication boundary for AttoLang as every other Zed package.

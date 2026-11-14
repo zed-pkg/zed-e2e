@@ -61,11 +61,16 @@ a tracked, reviewed `.zedignore` excludes it:
 bash suites/cli/attolang-source-package-boundary.sh
 ```
 
-The dedicated workflow `.github/workflows/attolang-source-package.yml` pins
-`zed-cli` to commit `388161f681bac8ae704a22a593280ceed6cc4fa9`. This is
-**SOURCE_ARTIFACT_ONLY** evidence: the source fixture is not parsed or run by
-any AttoLang compiler. Canonical `attolang` package language metadata remains
-tracked at [zed-interfaces #182](https://github.com/zed-pkg/zed-interfaces/issues/182),
+The dedicated workflow `.github/workflows/attolang-source-package.yml` currently pins
+`zed-cli` to reviewed-candidate lock repair commit `f5d0faafef7c8c73b230f22e02ddb5bf8b178b6c`
+([zed-cli #554](https://github.com/zed-pkg/zed-cli/pull/554)); repin to a merged
+and independently reviewed exact commit before release. The test also commits
+a changed `.atto` source and requires a new archive digest, so cached/stale
+packaging cannot masquerade as reproducibility. This is **SOURCE_ARTIFACT_ONLY**
+evidence: the source fixture is not parsed or run by any AttoLang compiler.
+Canonical `attolang` metadata has merged as
+[zed-interfaces #183](https://github.com/zed-pkg/zed-interfaces/pull/183),
+but downstream consumers must still update immutable dependency pins;
 the installed-path bridge at
 [zed-cli #543](https://github.com/zed-pkg/zed-cli/pull/543), and real five-backend
 publish-to-compile-to-execute proof at

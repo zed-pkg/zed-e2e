@@ -38,13 +38,19 @@ jobs:
           persist-credentials: false
           path: zed-e2e
 
-      - name: Check out current zed-cli main
+      # PRs exercise the exact, reviewed-candidate locked graph used by the
+      # AttoLang source boundary. Scheduled and push runs keep `main` as
+      # their compatibility canary, rather than hiding upstream drift.
+      - name: Check out Zed CLI for PR pin or main compatibility canary
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           repository: zed-pkg/zed-cli
-          ref: main
+          ref: ${{ github.event_name == 'pull_request' && 'f5d0faafef7c8c73b230f22e02ddb5bf8b178b6c' || 'main' }}
           path: zed-cli
+      - name: Verify exact CLI pin on PR
+        if: github.event_name == 'pull_request'
+        run: test "$(git -C zed-cli rev-parse HEAD)" = "f5d0faafef7c8c73b230f22e02ddb5bf8b178b6c"
 
       - name: Install exact Rust authority from checked-out zed-cli
         shell: bash

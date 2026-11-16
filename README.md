@@ -59,7 +59,15 @@ a tracked, reviewed `.zedignore` excludes it:
 ```bash
 # Use the same locally built real zed binary.
 bash suites/cli/attolang-source-package-boundary.sh
+bash suites/cli/attolang-canonical-source-package-boundary.sh
 ```
+
+The canonical-marker companion runs the **real pinned Zed CLI** against separate
+source packages with `.atto.pkg.toml` (canonical) and `.ores.pkg.toml`
+(legacy), verifies packed manifest/source bytes, deterministic repacking,
+and changed-source digest freshness. It is **SOURCE_ARTIFACT_ONLY**, not proof
+of a Zed frozen install or compiled guest. See [zed-cli #568](https://github.com/zed-pkg/zed-cli/pull/568)
+for read-only installed-root admission of the same marker names.
 
 The dedicated workflow `.github/workflows/attolang-source-package.yml` currently pins
 `zed-cli` to reviewed-candidate lock repair commit `f5d0faafef7c8c73b230f22e02ddb5bf8b178b6c`

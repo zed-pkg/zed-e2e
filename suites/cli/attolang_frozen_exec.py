@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -22,6 +23,25 @@ MAX_PATH_BYTES = 4096
 
 class AdmissionError(Exception):
     pass
+
+
+def _require_native_marker(root: Path) -> None:
+    """Require one regular native marker, never both or a symlink."""
+    found = []
+    for name in (".atto.pkg.toml", ".ores.pkg.toml"):
+        marker = root / name
+        try:
+            metadata = marker.lstat()
+        except FileNotFoundError:
+            continue
+        if not stat.S_ISREG(metadata.st_mode):
+            raise AdmissionError(f"AttoLang marker {marker} must be a regular file")
+        found.append(name)
+    if len(found) != 1:
+        raise AdmissionError(
+            f"expected exactly one AttoLang source marker at {root}: "
+            ".atto.pkg.toml or legacy .ores.pkg.toml"
+        )
 
 
 def _run_zed(zed: str, args: list[str], root: Path) -> None:
@@ -77,6 +97,7 @@ def _project_paths(zed: str, root: Path) -> str:
             raise AdmissionError("absolute or traversing AttoLang import root")
         if not (root / path).is_dir():
             raise AdmissionError("Zed import root is absent or not a directory")
+        _require_native_marker(root / path)
 
     value = data.get("value")
     joined = os.pathsep.join(paths)
@@ -100,11 +121,12 @@ def main(argv: list[str] | None = None) -> int:
         print("compiler command required after --", file=sys.stderr)
         return 2
     root = args.project.resolve()
-    for filename in (".zpkg.toml", ".zpkg.lock", ".ores.pkg.toml"):
+    for filename in (".zpkg.toml", ".zpkg.lock"):
         if not (root / filename).is_file():
             print(f"AttoLang admission failed: missing {filename}", file=sys.stderr)
             return 2
     try:
+        _require_native_marker(root)
         # No lifecycle shortcuts: reject malformed lockfiles, then enforce
         # the actual frozen installation before projecting path roots.
         _run_zed(args.zed, ["validate", "--require-lock"], root)

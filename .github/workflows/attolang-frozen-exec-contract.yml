@@ -1,0 +1,43 @@
+name: AttoLang frozen compiler adapter (host contract only)
+
+on:
+  pull_request:
+    paths:
+      - 'suites/cli/attolang_frozen_exec.py'
+      - 'tests/test_attolang_frozen_exec.py'
+      - '.github/workflows/attolang-frozen-exec-contract.yml'
+      - 'docs/attolang-frozen-compiler-adapter.md'
+  push:
+    branches: [main]
+    paths:
+      - 'suites/cli/attolang_frozen_exec.py'
+      - 'tests/test_attolang_frozen_exec.py'
+      - '.github/workflows/attolang-frozen-exec-contract.yml'
+      - 'docs/attolang-frozen-compiler-adapter.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: attolang-frozen-exec-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  adapter-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact PR source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Python syntax and host regression tests
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          python3 -m py_compile suites/cli/attolang_frozen_exec.py tests/test_attolang_frozen_exec.py
+          python3 -m unittest discover -s tests -p 'test_attolang_frozen_exec.py' -v
+      - name: Explicit evidence boundary
+        run: echo 'ADAPTER_HOST_ONLY - no real Zed CLI, compiler, or guest executed by this job'

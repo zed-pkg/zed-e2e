@@ -5,12 +5,14 @@ on:
     paths:
       - '.github/workflows/attolang-source-package.yml'
       - 'suites/cli/attolang-source-package-boundary.sh'
+      - 'suites/cli/attolang-canonical-source-package-boundary.sh'
       - 'README.md'
   push:
     branches: [main]
     paths:
       - '.github/workflows/attolang-source-package.yml'
       - 'suites/cli/attolang-source-package-boundary.sh'
+      - 'suites/cli/attolang-canonical-source-package-boundary.sh'
       - 'README.md'
   workflow_dispatch:
 
@@ -40,7 +42,9 @@ jobs:
       # This must run before Cargo: a broken upstream lock must not prevent
       # exercising the source fixture's own syntax gate.
       - name: Check script syntax
-        run: bash -n zed-e2e/suites/cli/attolang-source-package-boundary.sh
+        run: |
+          bash -n zed-e2e/suites/cli/attolang-source-package-boundary.sh
+          bash -n zed-e2e/suites/cli/attolang-canonical-source-package-boundary.sh
       - name: Install pinned Rust toolchain
         shell: bash
         run: |
@@ -61,5 +65,9 @@ jobs:
         env:
           ZED_BIN: ${{ github.workspace }}/zed-cli/target/debug/zed
         run: bash zed-e2e/suites/cli/attolang-source-package-boundary.sh
+      - name: Verify canonical and legacy AttoLang marker artifacts with real Zed
+        env:
+          ZED_BIN: ${{ github.workspace }}/zed-cli/target/debug/zed
+        run: bash zed-e2e/suites/cli/attolang-canonical-source-package-boundary.sh
       - name: Record proof ceiling
         run: echo 'SOURCE_ARTIFACT_ONLY - does not prove AttoLang compiler parsing or guest runtime execution'

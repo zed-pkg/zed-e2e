@@ -24,6 +24,7 @@ class FrozenAdapterTests(unittest.TestCase):
             (self.root / filename).write_text("# test fixture\n", encoding="utf-8")
         self.package = "zed_modules/acme/example"
         (self.root / self.package).mkdir(parents=True)
+        (self.root / self.package / ".atto.pkg.toml").write_text("[project]\nname = 'dependency'\n", encoding="utf-8")
         self.log = self.root / "commands.jsonl"
         self.projection = self.root / "paths.json"
         self.projection.write_text(json.dumps({
@@ -135,6 +136,46 @@ sys.exit(int(os.getenv('COMPILER_EXIT', '0')))
                 with mock.patch.object(module.subprocess, "run", side_effect=fake_run):
                     with self.assertRaises(module.AdmissionError):
                         module._project_paths("zed", self.root)
+
+    def test_canonical_project_marker_succeeds(self) -> None:
+        (self.root / ".ores.pkg.toml").unlink()
+        (self.root / ".atto.pkg.toml").write_text("[project]\\nname='consumer'\\n")
+        result = self.run_adapter()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_dual_project_markers_fail_before_zed(self) -> None:
+        (self.root / ".atto.pkg.toml").write_text("[project]\\nname='consumer'\\n")
+        result = self.run_adapter()
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(self.calls(), [])
+        self.assertFalse((self.root / "compiler-observed.json").exists())
+
+    def test_dual_dependency_markers_block_compiler(self) -> None:
+        (self.root / self.package / ".ores.pkg.toml").write_text("[project]\\nname='legacy'\\n")
+        result = self.run_adapter()
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(self.calls(), [
+            ["validate", "--require-lock"], ["install", "--frozen"],
+            ["attolang", "paths", "--json"],
+        ])
+        self.assertFalse((self.root / "compiler-observed.json").exists())
+
+    def test_unmarked_tagged_dependency_blocks_compiler(self) -> None:
+        (self.root / self.package / ".atto.pkg.toml").unlink()
+        result = self.run_adapter()
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse((self.root / "compiler-observed.json").exists())
+
+    @unittest.skipIf(os.name == "nt", "symlink creation requires extra Windows privileges")
+    def test_symlinked_canonical_marker_is_rejected(self) -> None:
+        marker = self.root / self.package / ".atto.pkg.toml"
+        marker.unlink()
+        external = self.root / "external.toml"
+        external.write_text("[project]\\nname='external'\\n")
+        marker.symlink_to(external)
+        result = self.run_adapter()
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse((self.root / "compiler-observed.json").exists())
 
     def test_rejects_oversized_json_without_running_compiler(self) -> None:
         self.projection.write_bytes(b" " * (1024 * 1024 + 1))
